@@ -11,9 +11,9 @@ cd "$ROOT"
 mkdir -p renders build
 
 for d in renders build; do
-  src="$REMOTE:$REMOTE_REPO/$d/"
-  # rsync exits 23 when the remote dir does not exist yet (nothing rendered/built); that is fine.
-  rsync -az --partial --itemize-changes "$src" "$ROOT/$d/" 2> >(grep -v 'No such file' >&2) || [[ $? -eq 23 ]] || true
+  # skip directories that do not exist on the server yet (nothing rendered/built)
+  ssh "$REMOTE" "test -d $REMOTE_REPO/$d" || continue
+  rsync -az --partial --itemize-changes "$REMOTE:$REMOTE_REPO/$d/" "$ROOT/$d/"
 done
 
 NEWEST="$(find renders build -type f \( -name '*.png' -o -name '*.jpg' -o -name '*.mp4' -o -name '*.zip' -o -name '*.glb' -o -name '*.blend' \) -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)"

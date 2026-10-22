@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(scripts/delegate.sh:*)",
+      "Bash(scripts/pull.sh:*)",
+      "Bash(./scripts/delegate.sh:*)",
+      "Bash(./scripts/pull.sh:*)",
+      "Bash(ssh gpubox true)",
+      "Bash(ssh gpubox nvidia-smi:*)",
+      "Bash(ssh gpubox \"tail:*)",
+      "Bash(ssh gpubox \"cat ~/work/logs/:*)",
+      "Bash(ssh gpubox \"ls ~/work/logs:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git lfs ls-files:*)"
+    ],
+    "deny": [
+      "Bash(ssh gpubox *sudo*)",
+      "Bash(ssh gpubox *apt*)",
+      "Bash(ssh gpubox *reboot*)",
+      "Bash(ssh gpubox *shutdown*)",
+      "Bash(ssh gpubox *nvidia-installer*)",
+      "Bash(ssh gpubox *rm -rf*)",
+      "Bash(ssh gpubox *pkill -f*)",
+      "Bash(git push origin main:*)",
+      "Bash(git push origin HEAD:main:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)"
+    ]
+  }
+}

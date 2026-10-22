@@ -1,0 +1,5 @@
+renders/
+build/
+.godot/
+*.log
+*.import-cache

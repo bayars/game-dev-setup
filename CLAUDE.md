@@ -27,6 +27,17 @@ Known mismatch: laptop Blender is 3.4.1. Do not open or save `.blend` files with
 - Server: `ssh gpubox` (10.0.0.224, user `safa`, key `~/.ssh/gpubox`). Repo checkout at `~/work/game`, logs in `~/work/logs`.
 - Stop and summarize after two identical failures.
 
+## Git access
+
+- Laptop pushes with a dedicated write deploy key `~/.ssh/github_game` (set in this repo's `core.sshCommand`).
+- Server fetches with a read-only deploy key via the `github-game` SSH alias (`~/.ssh/github_game_deploy` on the server). It cannot push.
+- `~/.ssh/gpubox` is only for logging in to the server.
+
+## Pipeline (details in `docs/pipeline.md`)
+
+Normal path for any GPU job, from a clean feature branch on the laptop: `scripts/delegate.sh <job> [args]`
+(pushes, runs `remote_run.sh` on the server, pulls results into `renders/` and `build/`).
+
 ## Status
 
-See `docs/server-baseline.md`. Pipeline scripts (`scripts/`) are added in Phase 3.
+See `docs/server-baseline.md`. Phase 3 scripts live in `scripts/`.

@@ -5,72 +5,71 @@ description: Use when building or testing the game project and a step needs a GP
 
 # GPU server delegation
 
-## Setup (fill in once)
+## Setup (verified 2026-10-21)
 
-- Server SSH alias: `gpubox` (reachable over WireGuard; defined in `~/.ssh/config`)
-- Server repo path: `~/work/<project>` (a disposable checkout of the GitLab repo)
-- Blender: `/opt/blender/blender` (pinned: 4.2 LTS)
-- Godot: `/opt/godot/godot` (pinned: 4.x, same version as laptop)
-- GPU: Tesla P4 (Pascal, 8 GB, CUDA only, no OptiX). NVIDIA driver is frozen on the 580 branch. Never upgrade or remove it.
-- Laptop has no GPU. Never try to render or run heavy 3D locally.
+- Server SSH alias: `gpubox` (10.0.0.224, user `safa`, key `~/.ssh/gpubox`, same LAN)
+- Server checkout: `~/work/game` (disposable clone of `github.com/bayars/game-dev-setup`; read-only deploy key). Logs: `~/work/logs`.
+- Blender `/opt/blender/blender` 4.2.23 LTS. Godot `/opt/godot/godot` 4.7.2-stable (laptop has the same at `~/.local/bin/godot`). Call them by absolute path; `~/bin` is not on the non-interactive PATH.
+- GPU: Tesla P4 (Pascal, 8 GB, CUDA only, **no OptiX**, passive cooling). Driver 550.163.01 (runfile, no DKMS), kernel 6.1.0-52 on `apt-mark hold`. Never upgrade or remove either.
+- The server is shared: ollama keeps about 0.7 GB of VRAM; there is 9.5 GB RAM and no swap. Keep scenes small.
+- Laptop has no GPU, and its Blender is 3.4.1: never render with it and never save `.blend` files with it.
 
-## What stays local vs. what goes to the server
+## Local vs. server
 
-Local (laptop):
-- Writing and editing GDScript, Python, shell scripts, docs
-- Git operations, linting, quick unit-level checks
-- Viewing results in VS Code
+Local: editing GDScript, Python, shell, docs; git; linting; viewing results in VS Code.
+Server: Cycles renders and baking, glTF export, Godot headless export, ffmpeg encode, anything over ~30 s or needing CUDA.
 
-Server (`gpubox`):
-- Blender Cycles renders and baking (`blender -b`)
-- Blender -> glTF export scripts
-- Godot headless exports and builds
-- ffmpeg encoding, sprite-sheet or turntable generation
-- Any command expected to take more than ~30 seconds or need CUDA
+## Procedure (one command)
 
-## Procedure for a delegated job
+From a **clean, committed feature branch** on the laptop:
 
-1. **Commit and push** the current work to a feature branch on GitLab. Never delegate uncommitted changes. The server only sees what is pushed.
-2. **Run the job on the server** with the helper, which checks out the exact commit and runs the named script:
-   `ssh gpubox "~/work/<project>/scripts/remote_run.sh <branch> <job> [args]"`
-   For jobs longer than a minute, start them detached and poll:
-   `ssh gpubox "tmux new -d -s <job> '<command> > ~/work/logs/<job>.log 2>&1'"`
-3. **Poll the log**, do not guess: `ssh gpubox "tail -n 40 ~/work/logs/<job>.log"`. Check whether the process is still running before waiting longer.
-4. **Fetch results** back to the laptop into `renders/` or `build/` (both gitignored):
-   `rsync -avz gpubox:~/work/<project>/renders/ ./renders/`
-   Convert formats VS Code cannot preview (EXR, HDR) to PNG on the server first so they open in the editor.
-5. **Report** to the user: what ran, which commit, where the output files are, and any warnings from the log. Open the image path so VS Code can show it.
+```
+scripts/delegate.sh [--detach] <job> [args]
+```
 
-Assets that must be part of the game (glTF exports, textures) are committed from the server on a branch (via Git LFS) or fetched with rsync and committed from the laptop. Prefer the second unless the user says otherwise, so the laptop remains the only place that writes to main work branches.
+It pushes the branch, syncs the server checkout to that exact commit, runs the job under `flock` + `timeout` (refuses above 80C), then rsyncs `renders/` and `build/` back and opens the newest image.
+
+| Job | Command | Output (laptop, gitignored) |
+|---|---|---|
+| render | `scripts/delegate.sh render art-src/x.blend <start> <end> [--samples N] [--res-percent N]` | `renders/x/frame_####.png` |
+| export_gltf | `scripts/delegate.sh export_gltf art-src/x.blend [out.glb]` | `build/gltf/x.glb` |
+| build_linux / build_windows | `scripts/delegate.sh build_linux` | `build/game-<platform>.zip` |
+| encode | `scripts/delegate.sh encode renders/x/frame_%04d.png renders/x.mp4` | NVENC with libx264 fallback |
+| gen_test_blend | `scripts/delegate.sh gen_test_blend` | `renders/_gen/test.blend` |
+
+- Paths in job arguments are relative to the repo root.
+- Use `--detach` for anything that may run more than a minute or two; delegate polls the log until the `EXIT=` line.
+- Do not wrap it in your own `ssh`, `tmux`, `rsync` or `flock`; the scripts already do. Hand-run `ssh gpubox` commands are for read-only diagnosis (logs, `nvidia-smi`).
+
+Report back: job, branch and commit, output path (open the image), and any warnings from the log (the log path is printed as `LOG=`).
+
+Assets for the game (`.glb`, textures) are moved into `godot/assets/` on the laptop and committed there; the server never pushes. The laptop is the only place that writes work branches.
+
+## First-time sanity check
+
+`ssh gpubox true && ssh gpubox nvidia-smi -L` should print the P4. If SSH fails, report it; do not change SSH config or keys.
 
 ## Rules
 
-- The server checkout is disposable. Never hand-edit files there. Fix things locally, push, rerun.
-- Run one GPU job at a time. Wrap GPU jobs in `flock /tmp/gpu.lock <command>`.
-- Before a long render, run `nvidia-smi` on the server and check temperature. The P4 is passively cooled; if it is above ~80C, stop and tell the user.
-- Always set a timeout on jobs (`timeout 2h <command>`) and log to a file.
-- Pass exact CUDA settings to Blender (device type CUDA, P4 enabled). If Cycles shows no GPU, stop and report the device list rather than falling back to CPU silently.
-- Never touch NVIDIA drivers, apt holds, or system settings on the server.
-- Never delete anything outside `~/work/<project>` and `~/work/logs` on the server. Ask first for any deletion of results.
-- Do not commit rendered output. Do not commit anything over 1 MB that is not tracked by Git LFS.
-- Keep Blender, Godot and driver versions as pinned above. If a task would need a newer one, ask the user.
-
-## Job catalog (put these in `scripts/`)
-
-| Job | Script | What it does |
-|---|---|---|
-| `render` | `scripts/render.sh <file.blend> <start> <end>` | Cycles render on CUDA to `renders/` |
-| `export_gltf` | `scripts/export_gltf.py` | Exports a .blend to .glb into `godot/assets/` |
-| `build_linux` | `scripts/build.sh linux` | Godot headless export, zips to `build/` |
-| `build_windows` | `scripts/build.sh windows` | Same for Windows |
-| `encode` | `scripts/encode.sh <in> <out>` | ffmpeg encode (NVENC if available) |
-
-If a needed script does not exist, write it locally, commit, push, then delegate it.
+- The server checkout is disposable. Never hand-edit files there. Fix locally, push, rerun.
+- One GPU job at a time (the scripts hold `/tmp/gpu.lock`; exit 75 means another job is running: wait, do not delete the lock).
+- Cycles must use the CUDA device only. If it finds none (exit 3) stop and report the device list; never fall back to CPU silently. If `nvidia-smi` or CUDA fails, compare `uname -r` with `6.1.0-52-amd64` and report.
+- Exit 4 means the GPU is above the temperature limit: stop and tell the user. Do not raise `MAX_TEMP`.
+- Never touch NVIDIA drivers, the kernel, apt holds or system settings on the server. No `apt upgrade`, no reboot, no `apt-mark unhold`. See `docs/driver-and-kernel-maintenance.md`.
+- Delete nothing on the server outside `~/work/game` and `~/work/logs`; ask first for deleting results.
+- Do not commit renders or builds. Git LFS is only for source art (`*.blend *.psd *.exr`); anything over 1 MB must be LFS. GitHub LFS free quota is 1 GB storage and 1 GB/month bandwidth, so do not commit large generated files and check `git lfs ls-files` before adding assets.
+- Keep Blender, Godot and driver versions as pinned. If a task needs different ones, ask the user.
+- Never use `pkill -f` on the server (it kills your own SSH session); use `pkill -x <name>`.
 
 ## When something fails
 
-1. Read the last 40-100 lines of the log, not just the exit code.
-2. Classify: CUDA/device problem, out of VRAM (8 GB limit: reduce texture size, tile size, or samples), missing dependency, or script bug.
-3. Script bug: fix locally, push, rerun. Environment problem: report to the user with the exact error; do not improvise system changes.
-4. After two failed attempts with the same error, stop and summarize instead of looping.
+1. Read the last 40-100 lines of the log (`ssh gpubox "tail -n 80 <LOG path>"`), not just the exit code.
+2. Classify using the exit code: 2 usage or missing file; 3 no CUDA device (or dirty server checkout when it comes from the sync step); 4 too hot; 75 busy; other = the job's own error. Also consider out of VRAM (8 GB minus ollama: lower tile size, samples or texture size) and missing dependency.
+3. Script bug: fix locally, commit, rerun. Environment problem: report the exact error and stop; do not improvise system changes.
+4. After two failures with the same error, stop and summarize instead of looping.
 
+## Known pitfalls
+
+- Cycles lists a `Tesla P4` as OPTIX too; `blender_render.py` already enables only CUDA.
+- Adaptive sampling makes trivial scenes finish early; irrelevant for real scenes, but turn it off when benchmarking heat.
+- Server stage-1 sync fails if the checkout has tracked local changes (someone edited it by hand); report it, do not reset it silently.

@@ -28,6 +28,10 @@ fi
 echo "== push $BRANCH ($(git rev-parse --short HEAD))"
 git push --quiet -u origin "$BRANCH"
 
+echo "== sync $REMOTE checkout"
+# remote_run.sh may not exist yet on the server (new branch/script), so move the checkout first.
+ssh "$REMOTE" "cd ~/$REMOTE_REPO && [ -z \"\$(git status --porcelain --untracked-files=no)\" ] && git fetch --quiet origin $(printf '%q' "$BRANCH") && git checkout --quiet --detach FETCH_HEAD"
+
 ARGS="$(printf '%q ' "$@")"
 RUN="TIMEOUT=${TIMEOUT:-2h} ~/$REMOTE_REPO/scripts/remote_run.sh ${DETACH[*]:-} $(printf '%q' "$BRANCH") $ARGS"
 

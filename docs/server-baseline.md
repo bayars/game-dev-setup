@@ -23,7 +23,7 @@ Audited read-only on 2026-10-21 over `ssh gpubox` (user `safa`, key `~/.ssh/gpub
 ## Differences from the plan
 
 1. **Driver is 550, not 580.** The web plan's "580 branch" is wrong for this box. 550.163.01 supports Pascal and CUDA 12.4, which is enough for Blender 4.2 Cycles CUDA. Pin 550.163.01 in `CLAUDE.md`. Do not upgrade.
-2. **`apt-mark hold` does not protect this driver.** It was installed by runfile, so there is no package to hold. The real risk is a kernel upgrade: the module is built for 6.1.0-52 with no DKMS, so a new kernel would boot without the GPU driver. Mitigation (needs your decision): hold the kernel (`linux-image-amd64`, `linux-headers-amd64`, `linux-image-6.1.0-52-amd64`) or install DKMS so the module rebuilds.
+2. **`apt-mark hold` does not protect this driver.** It was installed by runfile, so there is no package to hold. The real risk is a kernel upgrade: the module is built for 6.1.0-52 with no DKMS, so a new kernel would boot without the GPU driver. Mitigation (done 2026-10-21): kernel packages are on `apt-mark hold`; see `driver-and-kernel-maintenance.md`.
 3. **The GPU is shared with ollama.** About 720 MiB VRAM is in use and ollama keeps models loaded (it showed "27 minutes from now" unload time). Cycles scenes get roughly 6.9 GiB, and a big render plus ollama's load could OOM either side. The delegation scripts should log `nvidia-smi` memory before a job.
 4. **RAM is 9.5 GiB with no swap** and other services run on it, so Blender memory-heavy scenes may hit the OOM killer. Keep scenes small and cap Blender threads if needed.
 5. **31 GB free disk.** Blender (about 0.4 GB) and Godot with templates (about 1.5 GB) fit, but renders and the repo must stay small. `remote_run.sh` should prune old logs.

@@ -11,10 +11,12 @@ args = parse_args()
 scene = reset_scene()
 setup_render(scene, args.size, args.size, args.samples)
 standard_lighting(scene)
+studio_world(scene, top=(1.6, 1.35, 1.0), bottom=(0.45, 0.25, 0.1))  # bright warm studio for metal
 add_camera(scene, ortho_scale=2.75, direction=(0, -1, 0.3))
 
-gold = material("Gold", (1.0, 0.70, 0.12), metallic=1.0, roughness=0.2)
-gold_deep = material("GoldDeep", (0.75, 0.38, 0.05), metallic=1.0, roughness=0.38)
+gold = material("Gold", (1.0, 0.62, 0.08), metallic=1.0, roughness=0.28, emission=(1.0, 0.5, 0.05), emission_strength=0.3)
+gold_light = material("GoldLight", (1.0, 0.82, 0.30), metallic=1.0, roughness=0.22, emission=(1.0, 0.7, 0.2), emission_strength=0.5)
+gold_deep = material("GoldDeep", (0.62, 0.28, 0.03), metallic=1.0, roughness=0.4)
 pivot = new_pivot(scene)
 
 bpy.ops.mesh.primitive_cylinder_add(vertices=64, radius=1.0, depth=0.22)
@@ -51,9 +53,9 @@ for side in (-1, 1):  # -1 = face toward the camera, +1 = back
 
     star = bpy.data.objects.new("StarObj", star_mesh.copy())
     scene.collection.objects.link(star)
-    assign(star, gold)
+    assign(star, gold_light)
     m = star.modifiers.new("Solid", "SOLIDIFY")
-    m.thickness = 0.07
+    m.thickness = 0.11
     star.rotation_euler = (math.pi / 2, 0, 0)
     star.location = (0, y + side * 0.01, 0)
     parent_to(star, pivot)

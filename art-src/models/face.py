@@ -24,26 +24,26 @@ SKIN_SRGB = np.array([226, 174, 139]) / 255.0
 
 # name, x, z (relative to head centre), width_x, width_z, amplitude (m, along the surface normal), mirrored
 FEATURES = [
-    ("forehead", 0.0, 0.072, 0.045, 0.030, +0.0030, False),
-    ("brow_ridge", 0.030, 0.027, 0.028, 0.0090, +0.0058, True),
+    ("forehead", 0.0, 0.072, 0.045, 0.030, +0.0045, False),
+    ("brow_ridge", 0.030, 0.027, 0.028, 0.0095, +0.0085, True),
     ("glabella", 0.0, 0.025, 0.010, 0.0100, +0.0028, False),
     ("socket", 0.033, 0.005, 0.021, 0.0135, -0.0070, True),
     ("temple", 0.066, 0.030, 0.015, 0.0300, -0.0030, True),
     ("under_eye", 0.031, -0.010, 0.016, 0.0060, -0.0022, True),
     ("cheekbone", 0.052, -0.018, 0.026, 0.0170, +0.0062, True),
     ("cheek", 0.043, -0.045, 0.026, 0.0220, +0.0030, True),
-    ("nasal_bridge", 0.0, -0.008, 0.0070, 0.0200, +0.0068, False),
-    ("nose_tip", 0.0, -0.031, 0.0105, 0.0085, +0.0125, False),
-    ("alar", 0.0165, -0.034, 0.0075, 0.0075, +0.0062, True),
-    ("nostril", 0.0095, -0.042, 0.0040, 0.0035, -0.0075, True),
+    ("nasal_bridge", 0.0, -0.012, 0.0085, 0.0260, +0.0105, False),
+    ("nose_tip", 0.0, -0.032, 0.0125, 0.0115, +0.0210, False),
+    ("alar", 0.0170, -0.036, 0.0095, 0.0095, +0.0098, True),
+    ("nostril", 0.0100, -0.044, 0.0050, 0.0042, -0.0085, True),
     ("nasolabial", 0.027, -0.050, 0.0045, 0.0180, -0.0030, True),
     ("philtrum", 0.0, -0.054, 0.0050, 0.0060, -0.0015, False),
-    ("upper_lip", 0.0, -0.063, 0.0150, 0.0055, +0.0050, False),
-    ("lower_lip", 0.0, -0.079, 0.0135, 0.0065, +0.0062, False),
+    ("upper_lip", 0.0, -0.063, 0.0165, 0.0068, +0.0085, False),
+    ("lower_lip", 0.0, -0.080, 0.0150, 0.0078, +0.0098, False),
     ("mouth_corner", 0.0285, -0.071, 0.0050, 0.0060, -0.0035, True),
     ("mouth_line", 0.0, -0.071, 0.0220, 0.0028, -0.0032, False),
-    ("mentolabial", 0.0, -0.089, 0.0140, 0.0045, -0.0035, False),
-    ("chin", 0.0, -0.103, 0.0190, 0.0150, +0.0066, False),
+    ("mentolabial", 0.0, -0.092, 0.0160, 0.0050, -0.0055, False),
+    ("chin", 0.0, -0.105, 0.0200, 0.0170, +0.0115, False),
     ("jaw", 0.058, -0.080, 0.0200, 0.0160, +0.0042, True),
 ]
 
@@ -221,6 +221,10 @@ def build_head(arm, skin_img):
     t = np.clip(-u[:, 2], 0, 1)
     p = np.stack([u[:, 0] * A * (1 - 0.22 * t ** 1.6), u[:, 1] * B * (1 - 0.06 * t), u[:, 2] * C], 1)
     P = p + HEAD_C
+    rz0 = P[:, 2] - HEAD_C[2]
+    low = sstep((-rz0 - 0.012) / 0.05) * sstep((-u[:, 1] - 0.05) / 0.4)
+    y_plane = -(0.0850 - 0.012 * (np.abs(p[:, 0]) / 0.07) ** 2)      # nearly vertical profile under the nose
+    P[:, 1] = P[:, 1] * (1 - low) + y_plane * low
     nrm = np.stack([u[:, 0] / A, u[:, 1] / B, u[:, 2] / C], 1)
     nrm /= np.linalg.norm(nrm, axis=1)[:, None]
     wf = sstep((-u[:, 1] - 0.10) / 0.5)
@@ -235,11 +239,11 @@ def build_head(arm, skin_img):
     bm.verts.index_update()
     ed = np.array([(e.verts[0].index, e.verts[1].index) for e in bm.edges])
     val = np.bincount(ed.ravel(), minlength=n).astype(float)
-    for _ in range(3):
+    for _ in range(2):
         acc = np.zeros_like(P)
         np.add.at(acc, ed[:, 0], P[ed[:, 1]])
         np.add.at(acc, ed[:, 1], P[ed[:, 0]])
-        P = P + 0.5 * (acc / val[:, None] - P)
+        P = P + 0.45 * (acc / val[:, None] - P)
     for i, v in enumerate(bm.verts):
         v.co = Vector(P[i])
 

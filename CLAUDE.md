@@ -40,10 +40,11 @@ Normal path for any GPU job, from a clean feature branch on the laptop: `scripts
 
 ## Game: Dodger (2D one-screen arcade, Godot)
 
-Start screen (Space/Enter). Move the blue square (WASD/arrows), collect yellow coins (+10), avoid red squares: 3 lives, 1 s invulnerability after a hit. Score = 10 per coin + seconds survived. Best score is saved to `user://highscore.cfg` (not written during `--selftest`). Space/Enter restarts. Greybox shapes drawn in code; Blender-made sprites come in Week 4.
+Start screen (Space/Enter). Move the blue square (WASD/arrows), collect yellow coins (+10), avoid red squares: 3 lives, 1 s invulnerability after a hit. Score = 10 per coin + seconds survived. Best score is saved to `user://highscore.cfg` (not written during `--selftest`). Space/Enter restarts. Art is Blender-made: sprite scenes are Python scripts in `art-src/sprites/` (`player`, `hazard`, `coin`, `background`, shared `common.py`), rendered on the server with `scripts/delegate.sh sprites [name|all] [size]` (final sheets use size 96; 256 for design previews). Output `build/sprites/*_sheet.png` (8 frames, 1 row) and `background.png` is copied into `godot/assets/sprites/` and committed from the laptop. Sprites display at scale 0.5.
 - Run: `godot --path godot` (editor: `godot --path godot -e`)
+- Screenshots without a window: `xvfb-run -a -s "-screen 0 960x540x24" godot --path godot --rendering-driver opengl3 --write-movie out.png --fixed-fps 30 --quit-after 240 -- --autostart`
 - Headless loop check: `godot --headless --path godot -- --selftest` prints `SELFTEST_OK` (also works on the exported binary: `game.x86_64 --headless -- --selftest`)
-- Layout: `godot/scenes/` (`main.tscn`, `faller.tscn`), `godot/scripts/` (`main.gd` loop, `player.gd`, `faller.gd`). Input uses physical key checks (no InputMap yet).
+- Layout: `godot/scenes/` (`main.tscn`, `faller.tscn`), `godot/scripts/` (`main.gd` loop, `player.gd`, `faller.gd`). Input uses physical key checks (no InputMap yet). `-- --autostart` skips the start screen.
 
 ## Status
 

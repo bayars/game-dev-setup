@@ -33,6 +33,7 @@ It pushes the branch, syncs the server checkout to that exact commit, runs the j
 |---|---|---|
 | render | `scripts/delegate.sh render art-src/x.blend <start> <end> [--samples N] [--res-percent N]` | `renders/x/frame_####.png` |
 | export_gltf | `scripts/delegate.sh export_gltf art-src/x.blend [out.glb]` | `build/gltf/x.glb` |
+| sprites | `scripts/delegate.sh sprites [player\|hazard\|coin\|background\|all] [size]` | `build/sprites/<name>_sheet.png`, `background.png` |
 | build_linux / build_windows | `scripts/delegate.sh build_linux` | `build/game-<platform>.zip` |
 | encode | `scripts/delegate.sh encode renders/x/frame_%04d.png renders/x.mp4` | NVENC with libx264 fallback |
 | gen_test_blend | `scripts/delegate.sh gen_test_blend` | `renders/_gen/test.blend` |

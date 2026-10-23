@@ -3,7 +3,7 @@
 #   check tree is clean -> push the current feature branch -> run the job on the server -> pull results.
 # Usage: delegate.sh [--detach] <job> [args...]
 #   jobs: render <blend> <start> <end> | export_gltf <blend> [out] | sprites [name|all] [size]
-#         | build_linux | build_windows
+#         | models [name|all] | build_linux [project_dir] | build_windows [project_dir]
 #         | encode <in> <out> | gen_test_blend
 # --detach starts the job in tmux on the server and polls the log (for jobs over a minute or two).
 # Env: REMOTE=gpubox  REMOTE_REPO=work/game  TIMEOUT=2h  NO_OPEN=1
@@ -31,7 +31,7 @@ git push --quiet -u origin "$BRANCH"
 
 echo "== sync $REMOTE checkout"
 # remote_run.sh may not exist yet on the server (new branch/script), so move the checkout first.
-ssh "$REMOTE" "cd ~/$REMOTE_REPO && [ -z \"\$(git status --porcelain --untracked-files=no)\" ] && git fetch --quiet origin $(printf '%q' "$BRANCH") && git checkout --quiet --detach FETCH_HEAD"
+ssh "$REMOTE" "cd ~/$REMOTE_REPO && git config lfs.fetchexclude 'releases/*' && [ -z \"\$(git status --porcelain --untracked-files=no)\" ] && git fetch --quiet origin $(printf '%q' "$BRANCH") && git checkout --quiet --detach FETCH_HEAD"
 
 ARGS="$(printf '%q ' "$@")"
 RUN="TIMEOUT=${TIMEOUT:-2h} ~/$REMOTE_REPO/scripts/remote_run.sh ${DETACH[*]:-} $(printf '%q' "$BRANCH") $ARGS"

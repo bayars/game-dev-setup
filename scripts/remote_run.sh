@@ -2,7 +2,7 @@
 # Runs ON THE SERVER. Checks out an exact pushed commit and runs one job under
 # flock + timeout, logging to ~/work/logs. Usage:
 #   remote_run.sh [--detach] <branch> <job> [args...]
-# Jobs: render, export_gltf, sprites, build_linux, build_windows, encode, gen_test_blend
+# Jobs: render, export_gltf, sprites, models, build_linux, build_windows, encode, gen_test_blend
 # Env:  TIMEOUT (default 2h), MAX_TEMP (default 80)
 set -euo pipefail
 
@@ -27,6 +27,7 @@ if [[ -z "${RR_STAGE2:-}" ]]; then
     git status --short >&2
     exit 3
   fi
+  git config lfs.fetchexclude 'releases/*'   # release zips are for the laptop; do not download them here
   git fetch --quiet origin "$BRANCH"
   git checkout --quiet --detach FETCH_HEAD
   export RR_STAGE2=1
@@ -43,6 +44,7 @@ LOG="${RR_LOG:-$LOG_DIR/${JOB}-${SHA}-${TS}.log}"
 case "$JOB" in
   render)         CMD=("$ROOT/scripts/render.sh" "$@") ;;
   export_gltf)    CMD=("$ROOT/scripts/export_gltf.sh" "$@") ;;
+  models)         CMD=("$ROOT/scripts/models.sh" "$@") ;;
   sprites)        CMD=("$ROOT/scripts/sprites.sh" "$@") ;;
   build_linux)    CMD=("$ROOT/scripts/build.sh" linux "$@") ;;
   build_windows)  CMD=("$ROOT/scripts/build.sh" windows "$@") ;;

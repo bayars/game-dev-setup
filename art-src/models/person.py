@@ -1,11 +1,11 @@
 """The walker: a rigged, animated stylised person (about 1.78 m).
 
 Build order: skeleton -> smooth skinned body (Skin modifier on a stick figure: torso, limbs, hands with
-fingers) -> clothes zones -> auto weights -> rigid parts (head with face, hair, clothes details, shoes)
+fingers) -> clothes zones -> auto weights -> head (face.py: sculpted face, rigged eyelids, eyes, ears, strand hair) -> clothes details and shoes
 -> actions (idle_loop, walk_loop, run_loop, open_door) -> glTF export -> pose-sheet previews.
 
 Left/right are the character's own: Left is +X. The character faces -Y (+Z in glTF/Godot).
-Bones: Hips Spine Chest Neck Head Eye_L/R Clavicle/UpperArm/Forearm/Hand _L/_R and
+Bones: Hips Spine Chest Neck Head Eye_L/R LidUp_L/R LidLo_L/R Clavicle/UpperArm/Forearm/Hand _L/_R and
 UpperLeg/LowerLeg/Foot/Toes _L/_R. Actions that end in `_loop` loop in Godot.
 """
 import math
@@ -63,7 +63,9 @@ for sx, suf in ((1, "L"), (-1, "R")):
         (f"LowerLeg_{suf}", (sx * .10, 0, .50), (sx * .10, 0, .09), f"UpperLeg_{suf}"),
         (f"Foot_{suf}", (sx * .10, 0, .09), (sx * .10, -.14, .035), f"LowerLeg_{suf}"),
         (f"Toes_{suf}", (sx * .10, -.14, .035), (sx * .10, -.22, .02), f"Foot_{suf}"),
-        (f"Eye_{suf}", (sx * .036, -.086, 1.705), (sx * .036, -.086, 1.728), "Head"),
+        (f"Eye_{suf}", (sx * .031, -.078, 1.690), (sx * .031, -.078, 1.702), "Head"),
+        (f"LidUp_{suf}", (sx * .031, -.078, 1.690), (sx * .031, -.078, 1.700), "Head"),
+        (f"LidLo_{suf}", (sx * .031, -.078, 1.690), (sx * .031, -.078, 1.700), "Head"),
     ]
 
 arm_data = bpy.data.armatures.new("PersonRig")
@@ -249,15 +251,16 @@ for poly in body.data.polygons:
     poly.use_smooth = True
 
 # --- auto weights (eyes are not deforming the body)
-for sx, suf in ((1, "L"), (-1, "R")):
-    arm_data.bones[f"Eye_{suf}"].use_deform = False
+FACE_BONES = [f"{n}_{suf}" for n in ("Eye", "LidUp", "LidLo") for suf in ("L", "R")]
+for n in FACE_BONES:
+    arm_data.bones[n].use_deform = False
 bpy.ops.object.select_all(action="DESELECT")
 body.select_set(True)
 arm.select_set(True)
 bpy.context.view_layer.objects.active = arm
 bpy.ops.object.parent_set(type="ARMATURE_AUTO")
-for sx, suf in ((1, "L"), (-1, "R")):
-    arm_data.bones[f"Eye_{suf}"].use_deform = True
+for n in FACE_BONES:
+    arm_data.bones[n].use_deform = True
 
 # any vertex the heat solver missed goes to the nearest bone
 missing = 0
@@ -265,99 +268,24 @@ bone_segs = {b[0]: (b[1], b[2]) for b in BONES}
 for v in body.data.vertices:
     if not any(g.weight > 0.001 for g in v.groups):
         missing += 1
-        nearest = min((n for n in bone_segs if not n.startswith("Eye")), key=lambda n: seg_dist(v.co, *bone_segs[n]))
+        nearest = min((n for n in bone_segs if n not in FACE_BONES), key=lambda n: seg_dist(v.co, *bone_segs[n]))
         vg = body.vertex_groups.get(nearest) or body.vertex_groups.new(name=nearest)
         vg.add([v.index], 1.0, "REPLACE")
 print("BODY verts", len(body.data.vertices), "unweighted fixed", missing)
 
-# --------------------------------------------------------------------------- head and face (rigid on Head)
-HC = Vector((0, -.005, 1.69))   # head centre
-head_mesh_op = bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=32, radius=1.0)
-head = bpy.context.active_object
-head.name = "HeadMesh"
-for v in head.data.vertices:
-    x, y, z = v.co
-    t = max(0.0, -z)
-    x *= 1.0 - 0.30 * t ** 1.4            # narrower jaw
-    y = y * (1.0 - 0.12 * t) - 0.13 * t ** 1.6 * 0.1
-    v.co = Vector((x * .092, y * .10 - 0.012 * t, z * .115)) + HC
-bpy.ops.object.shade_smooth_by_angle(angle=math.radians(80))
-head.data.materials.append(SKIN)
+# --------------------------------------------------------------------------- head and face (face.py)
+import face
 
-parts = [head]
-for sx in (1, -1):    # ears
-    parts.append(sphere("Ear", .02, HC + Vector((sx * .093, .008, .0)), SKIN, scale=(.45, .8, 1.0)))
-    parts.append(sphere("EarIn", .011, HC + Vector((sx * .097, .004, .0)), LIP, scale=(.3, .7, .9)))
-parts.append(sphere("Nose", .0145, Vector((0, -.099, 1.675)), SKIN, scale=(.9, 1.15, .95)))
-parts.append(sphere("NoseTip", .011, Vector((0, -.106, 1.667)), SKIN, scale=(1.1, 1.0, .9)))
-for sx in (1, -1):    # brows
-    parts.append(box("Brow", (.044, .008, .0095), Vector((sx * .04, -.095, 1.742)), HAIR, bevel=.003,
-                     rot=(0, sx * -.18, 0)))
-
-# smile: a bevelled bezier curve converted to a mesh
-curve = bpy.data.curves.new("Mouth", "CURVE")
-curve.dimensions = "3D"
-curve.bevel_depth = .0034
-curve.bevel_resolution = 3
-sp = curve.splines.new("BEZIER")
-sp.bezier_points.add(2)
-for bp, (x, z) in zip(sp.bezier_points, ((-.027, .007), (0, -.003), (.027, .007))):
-    bp.co = (x, 0, z)
-    bp.handle_left_type = bp.handle_right_type = "AUTO"
-mouth = make_object("Mouth", curve)
-mouth.location = (0, -.0925, 1.643)
-mouth.data.materials.append(LIP)
-activate(mouth)
-bpy.ops.object.convert(target="MESH")
-parts.append(mouth)
-parts.append(sphere("LowerLip", .012, Vector((0, -.0905, 1.628)), LIP, scale=(1.5, .5, .55)))
-
-# hair: a cap over the crown and back, a swept fringe, side tufts and a short tail
-hair_bm = bmesh.new()
-bmesh.ops.create_uvsphere(hair_bm, u_segments=40, v_segments=26, radius=1.0)
-kill = []
-for v in hair_bm.verts:
-    ux, uy, uz = v.co
-    keep = uz > .52 or (uy > -.18 and uz > -.5)
-    if abs(ux) > .78 and abs(uz) < .38 and -.5 < uy < .4:
-        keep = False          # leave the ears free
-    if not keep:
-        kill.append(v)
-bmesh.ops.delete(hair_bm, geom=kill, context="VERTS")
-for v in hair_bm.verts:
-    v.co = Vector((v.co.x * .1, v.co.y * .109, v.co.z * .124)) + HC + Vector((0, .006, .004))
-hair_mesh = bpy.data.meshes.new("HairCap")
-hair_bm.to_mesh(hair_mesh)
-hair_bm.free()
-hair_cap = make_object("HairCap", hair_mesh)
-hair_cap.data.materials.append(HAIR)
-activate(hair_cap)
-bpy.ops.object.shade_smooth_by_angle(angle=math.radians(70))
-sol = hair_cap.modifiers.new("Solid", "SOLIDIFY")
-sol.thickness = .012
-parts.append(hair_cap)
-
-for i, x in enumerate((-.072, -.036, 0.0, .036, .072)):   # fringe clumps swept sideways
-    o = ico("Fringe", .03, HC + Vector((x, -.093 + abs(x) * .45, .078 - abs(x) * .06)), HAIR, subdiv=1,
-            scale=(1.5, 1.0, 0.62))
-    o.rotation_euler = (.25, (i - 2) * .18, (2 - i) * .25)
-    parts.append(o)
-for sx in (1, -1):
-    t = ico("Sideburn", .026, HC + Vector((sx * .092, -.028, .026)), HAIR, subdiv=1, scale=(.55, .7, 1.5))
-    parts.append(t)
-parts.append(ico("BackTuft", .04, HC + Vector((0, .095, .02)), HAIR, subdiv=1, scale=(1.3, .9, 1.4)))
-bind_rigid(parts, "Head", "Head_parts")
-
-# eyes: sclera, iris, pupil, spark and a lash line, one mesh per eye on its Eye bone (scaled to blink)
-for sx, suf in ((1, "L"), (-1, "R")):
-    c = Vector((sx * .036, -.086, 1.705))
-    ep = [sphere("Sclera", .0175, c, WHITE, scale=(1, .78, 1.08)),
-          sphere("Iris", .0108, c + Vector((0, -.0108, 0)), IRIS, scale=(1, .5, 1)),
-          sphere("Pupil", .0058, c + Vector((0, -.0148, 0)), PUPIL, scale=(1, .4, 1)),
-          sphere("Spark", .0026, c + Vector((-sx * .0036, -.0188, .0045)), SPARK, scale=(1, .5, 1)),
-          box("Lash", (.038, .006, .0045), c + Vector((0, -.0105, .0175)), LASH, bevel=.0015,
-              rot=(0, sx * -.1, 0))]
-    bind_rigid(ep, f"Eye_{suf}", f"Eye_{suf}_parts")
+eye_centres = face.build(arm)
+# the eye and eyelid bones pivot on the real eyeball centres
+bpy.context.view_layer.objects.active = arm
+bpy.ops.object.mode_set(mode="EDIT")
+for suf, c in eye_centres.items():
+    for name, up in ((f"Eye_{suf}", .012), (f"LidUp_{suf}", .010), (f"LidLo_{suf}", .010)):
+        eb = arm_data.edit_bones[name]
+        eb.head = c
+        eb.tail = c + Vector((0, 0, up))
+bpy.ops.object.mode_set(mode="OBJECT")
 
 # --------------------------------------------------------------------------- clothes details
 # collar, scarf (two wraps, knot, tail), zipper, pockets, hem, cuffs: rigid on Chest/Hips/forearms
@@ -469,8 +397,6 @@ def apply_pose(p, frame):
         pb.keyframe_insert("rotation_quaternion", frame=frame)
         if pb.name == "Hips":
             pb.keyframe_insert("location", frame=frame)
-        if pb.name.startswith("Eye_"):
-            pb.keyframe_insert("scale", frame=frame)
 
 
 def make_action(name, frames, fn, loop=True):
@@ -493,11 +419,12 @@ ARM_IN = 0.34   # relaxed arms hang closer to the body than the modelling A-pose
 
 
 def blink(p, t, at, width=0.05):
-    """Close the eyes (scale the Eye bones) around phase `at`."""
+    """Close both eyes with the eyelid bones around cycle phase `at`."""
     d = abs(((t - at + 0.5) % 1.0) - 0.5)
-    s = 1.0 - 0.92 * (1.0 - smooth(d / width))
-    p.s("Eye_L", 1, max(.08, s), 1)
-    p.s("Eye_R", 1, max(.08, s), 1)
+    k = 1.0 - smooth(d / width)
+    for suf in ("L", "R"):
+        p.r(f"LidUp_{suf}", x=0.64 * k)
+        p.r(f"LidLo_{suf}", x=-0.16 * k)
 
 
 def idle(t):
@@ -662,10 +589,17 @@ aim(cam, (-0.35, -1.0, 0.15), (0, 0, 0.9))
 cam.data.ortho_scale = 2.1
 scene.render.filepath = out[:-4] + "_preview.png"
 bpy.ops.render.render(write_still=True)
-# a close-up of the face
-aim(cam, (-0.15, -1.0, 0.05), (0, -0.05, 1.68))
-cam.data.ortho_scale = 0.42
-scene.cycles.samples = 90
-scene.render.filepath = out[:-4] + "_face.png"
+# close-ups of the face: front, three-quarter, side, and mid-blink
+scene.render.resolution_x = scene.render.resolution_y = 512
+scene.cycles.samples = 110
+cam.data.ortho_scale = 0.30
+for name, direction in (("front", (0, -1, 0.02)), ("34", (-0.6, -1, 0.05)), ("side", (-1, -0.1, 0.0))):
+    aim(cam, direction, (0, -0.045, 1.675))
+    scene.render.filepath = os.path.join(os.path.dirname(out), f"person_face_{name}.png")
+    bpy.ops.render.render(write_still=True)
+arm.animation_data.action = act_idle
+scene.frame_set(56)
+aim(cam, (-0.25, -1, 0.05), (0, -0.045, 1.675))
+scene.render.filepath = os.path.join(os.path.dirname(out), "person_face_blink.png")
 bpy.ops.render.render(write_still=True)
 print("PERSON_DONE")

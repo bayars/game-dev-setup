@@ -356,10 +356,12 @@ func _open_door() -> void:
 	player.move_input = Vector2.ZERO
 	player.face_toward(HOUSE_POS + Vector3(0, 0, 3.0))
 	_fade(_hint, 0.0, 0.2)
-	var t := create_tween().set_parallel(true)
-	t.tween_property(door_hinge, "rotation:y", door_open_angle, 1.8).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	t.tween_property(interior_light, "light_energy", 2.2, 1.8)
+	player.play_action("open_door")
+	var t := create_tween().set_parallel(true)   # the door starts moving once the hand is on the knob
+	t.tween_property(door_hinge, "rotation:y", door_open_angle, 1.8).set_delay(0.55).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	t.tween_property(interior_light, "light_energy", 2.2, 1.8).set_delay(0.55)
 	await t.finished
+	player.end_action()
 	await _say("Welcome home.", 2.2)
 	_end()
 
@@ -426,6 +428,10 @@ func _autoplay_step(delta: float) -> void:
 
 func _check_result() -> void:
 	var p := player.global_position
+	for clip in ["idle_loop", "walk_loop", "run_loop", "open_door"]:
+		if not player.has_animation(clip):
+			_fail("missing animation " + clip)
+			return
 	if door_hinge == null or door_hinge.rotation.y < deg_to_rad(95.0):
 		_fail("door did not open")
 	elif p.y < -0.2 or p.z > -13.5 or p.z < -15.0 or absf(p.x) > 1.5:

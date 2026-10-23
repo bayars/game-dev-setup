@@ -345,9 +345,6 @@ for i, x in enumerate((-.072, -.036, 0.0, .036, .072)):   # fringe clumps swept 
 for sx in (1, -1):
     t = ico("Sideburn", .026, HC + Vector((sx * .092, -.028, .026)), HAIR, subdiv=1, scale=(.55, .7, 1.5))
     parts.append(t)
-    t2 = ico("Tuft", .03, HC + Vector((sx * .062, -.02, .104)), HAIR, subdiv=1, scale=(1.0, 1.0, .8))
-    t2.rotation_euler = (0, sx * .5, 0)
-    parts.append(t2)
 parts.append(ico("BackTuft", .04, HC + Vector((0, .095, .02)), HAIR, subdiv=1, scale=(1.3, .9, 1.4)))
 bind_rigid(parts, "Head", "Head_parts")
 
@@ -584,8 +581,8 @@ def open_door(t):
     p.r("Head", x=.10 * reach, z=-.05 * reach)
     # right arm: forward and slightly in, elbow flexing as it pushes
     p.r("Clavicle_R", z=-.04 * reach)
-    p.r("UpperArm_R", x=-1.08 * reach - .18 * push, y=ARM_IN * reach, z=.52 * reach)
-    p.r("Forearm_R", x=-.38 * reach + .22 * push)
+    p.r("UpperArm_R", x=-.86 * reach - .16 * push, y=ARM_IN * reach, z=.46 * reach)
+    p.r("Forearm_R", x=-.55 * reach + .25 * push)
     p.r("Hand_R", x=-.22 * reach)
     # left arm drifts forward a little for balance
     p.r("UpperArm_L", x=-.25 * reach)

@@ -40,7 +40,7 @@ Normal path for any GPU job, from a clean feature branch on the laptop: `scripts
 
 ## Game: Dodger (2D one-screen arcade, Godot)
 
-Move the blue square (WASD/arrows), collect yellow coins (+10), avoid red squares; score = 10 per coin + seconds survived. Space/Enter restarts. Greybox shapes drawn in code; Blender-made sprites come in Week 4.
+Start screen (Space/Enter). Move the blue square (WASD/arrows), collect yellow coins (+10), avoid red squares: 3 lives, 1 s invulnerability after a hit. Score = 10 per coin + seconds survived. Best score is saved to `user://highscore.cfg` (not written during `--selftest`). Space/Enter restarts. Greybox shapes drawn in code; Blender-made sprites come in Week 4.
 - Run: `godot --path godot` (editor: `godot --path godot -e`)
 - Headless loop check: `godot --headless --path godot -- --selftest` prints `SELFTEST_OK` (also works on the exported binary: `game.x86_64 --headless -- --selftest`)
 - Layout: `godot/scenes/` (`main.tscn`, `faller.tscn`), `godot/scripts/` (`main.gd` loop, `player.gd`, `faller.gd`). Input uses physical key checks (no InputMap yet).

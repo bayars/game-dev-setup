@@ -33,8 +33,8 @@ FEATURES = [
     ("cheekbone", 0.052, -0.018, 0.026, 0.0170, +0.0062, True),
     ("cheek", 0.043, -0.045, 0.026, 0.0220, +0.0030, True),
     ("nasal_bridge", 0.0, -0.012, 0.0085, 0.0260, +0.0105, False),
-    ("nose_tip", 0.0, -0.032, 0.0125, 0.0115, +0.0210, False),
-    ("alar", 0.0170, -0.036, 0.0095, 0.0095, +0.0098, True),
+    ("nose_tip", 0.0, -0.032, 0.0120, 0.0110, +0.0178, False),
+    ("alar", 0.0170, -0.036, 0.0095, 0.0095, +0.0085, True),
     ("nostril", 0.0100, -0.044, 0.0050, 0.0042, -0.0085, True),
     ("nasolabial", 0.027, -0.050, 0.0045, 0.0180, -0.0030, True),
     ("philtrum", 0.0, -0.054, 0.0050, 0.0060, -0.0015, False),
@@ -223,7 +223,7 @@ def build_head(arm, skin_img):
     P = p + HEAD_C
     rz0 = P[:, 2] - HEAD_C[2]
     low = sstep((-rz0 - 0.012) / 0.05) * sstep((-u[:, 1] - 0.05) / 0.4)
-    y_plane = -(0.0850 - 0.012 * (np.abs(p[:, 0]) / 0.07) ** 2)      # nearly vertical profile under the nose
+    y_plane = -(0.0850 - 0.034 * (np.abs(p[:, 0]) / 0.07) ** 2)      # nearly vertical profile under the nose
     P[:, 1] = P[:, 1] * (1 - low) + y_plane * low
     nrm = np.stack([u[:, 0] / A, u[:, 1] / B, u[:, 2] / C], 1)
     nrm /= np.linalg.norm(nrm, axis=1)[:, None]

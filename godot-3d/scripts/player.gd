@@ -17,12 +17,29 @@ var move_input := Vector2.ZERO
 var run := false
 var frozen := false
 var cam_yaw := 0.0
+var cam_distance := 4.4:          # follow-camera distance; the title portrait uses a close value
+	set(v):
+		cam_distance = v
+		if _arm:
+			_arm.spring_length = v
+var cam_fov := 62.0:
+	set(v):
+		cam_fov = v
+		if _camera:
+			_camera.fov = v
+var cam_focus := 1.5              # height of the point the camera looks at
+var cam_pitch := -0.22:           # radians, negative looks down on the player
+	set(v):
+		cam_pitch = v
+		if _arm:
+			_arm.rotation.x = v
 
 var model: Node3D
 var _anim: AnimationPlayer
 var _action := false     # a one-shot action (open_door) is playing
 var _rig: Node3D
 var _arm: SpringArm3D
+var _camera: Camera3D
 
 func setup(model_scene: PackedScene) -> void:
 	var shape := CollisionShape3D.new()
@@ -44,16 +61,16 @@ func setup(model_scene: PackedScene) -> void:
 	_rig.top_level = true
 	add_child(_rig)
 	_arm = SpringArm3D.new()
-	_arm.spring_length = 4.4
+	_arm.spring_length = cam_distance
 	_arm.margin = 0.35
-	_arm.rotation.x = -0.22
+	_arm.rotation.x = cam_pitch
 	_arm.add_excluded_object(get_rid())
 	_rig.add_child(_arm)
-	var camera := Camera3D.new()
-	camera.fov = 62.0
-	camera.current = true
-	_arm.add_child(camera)
-	_rig.global_position = global_position + Vector3(0, 1.5, 0)
+	_camera = Camera3D.new()
+	_camera.fov = cam_fov
+	_camera.current = true
+	_arm.add_child(_camera)
+	_rig.global_position = global_position + Vector3(0, cam_focus, 0)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -92,7 +109,7 @@ func _physics_process(delta: float) -> void:
 
 func _process(delta: float) -> void:
 	_rig.rotation.y = cam_yaw
-	var goal := global_position + Vector3(0, 1.5, 0)
+	var goal := global_position + Vector3(0, cam_focus, 0)
 	_rig.global_position = _rig.global_position.lerp(goal, 1.0 - exp(-12.0 * delta))
 
 func face_toward(target: Vector3, seconds: float = 0.4) -> void:

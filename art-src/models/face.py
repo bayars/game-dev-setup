@@ -17,8 +17,8 @@ HEAD_C = np.array([0.0, 0.0, 1.685])
 HEAD_R = np.array([0.074, 0.095, 0.118])      # ellipsoid radii before the features are sculpted in
 EYE_X = 0.031
 EYE_Z = 1.690
-EYE_A, EYE_B = 0.0150, 0.0066                  # half width / half height of the lid opening
-EYE_TILT = 0.10                                # outer corner sits a little higher than the inner one
+EYE_A, EYE_B = 0.0138, 0.0052                  # half width / half height of the lid opening
+EYE_TILT = 0.09                                # outer corner sits a little higher than the inner one
 EYEBALL_R = 0.0118
 SKIN_SRGB = np.array([226, 174, 139]) / 255.0
 
@@ -41,7 +41,7 @@ FEATURES = [
     ("upper_lip", 0.0, -0.063, 0.0150, 0.0055, +0.0050, False),
     ("lower_lip", 0.0, -0.079, 0.0135, 0.0065, +0.0062, False),
     ("mouth_corner", 0.0285, -0.071, 0.0050, 0.0060, -0.0035, True),
-    ("mouth_line", 0.0, -0.071, 0.0230, 0.0012, -0.0058, False),
+    ("mouth_line", 0.0, -0.071, 0.0220, 0.0028, -0.0032, False),
     ("mentolabial", 0.0, -0.089, 0.0140, 0.0045, -0.0035, False),
     ("chin", 0.0, -0.103, 0.0165, 0.0150, +0.0070, False),
     ("jaw", 0.055, -0.085, 0.0160, 0.0140, +0.0026, True),
@@ -149,9 +149,9 @@ def paint_skin(size=1024):
     blend(line, (0.34, 0.12, 0.13), 0.95)                                             # mouth line
     blend(g2(X, Z - 1.589, 0.012, 0.005), (0.78, 0.55, 0.50), 0.10)                  # chin
     img += rng.normal(0, 0.008, img.shape)                                             # fine grain
-    for _ in range(40):                                                                # a few freckles
+    for _ in range(22):                                                                # a few freckles
         fx, fz = rng.uniform(0.018, 0.058) * rng.choice((-1, 1)), rng.uniform(1.655, 1.690)
-        blend(g2(X - fx, Z - fz, 0.0011, 0.0011), (0.66, 0.46, 0.34), 0.35)
+        blend(g2(X - fx, Z - fz, 0.0010, 0.0010), (0.70, 0.50, 0.38), 0.20)
 
     # eyebrows: individual hair strokes along an arch, thick at the inner end, tapering outward
     brow = np.zeros((S, S))
@@ -230,7 +230,7 @@ def build_head(arm, skin_img):
     for _, fx, fz, sx, sz, amp, sym in FEATURES:
         dx = (ax - fx) if sym else (P[:, 0] - fx)
         d += amp * g2(dx, rz - fz, sx, sz)
-    P = P + nrm * (wf * d)[:, None]
+    P[:, 1] -= wf * d       # forward displacement keeps x/z (and so the painted texture) registered
     for i, v in enumerate(bm.verts):
         v.co = Vector(P[i])
 
@@ -576,7 +576,7 @@ def build(arm):
     skin_img = make_image("FaceSkin", paint_skin(1024))
     eye_img = make_image("EyeTex", paint_eye(512))
     head, rim_y = build_head(arm, skin_img)
-    centres = build_eyes(arm, rim_y + 0.0088, eye_img)
+    centres = build_eyes(arm, rim_y + 0.0100, eye_img)
     build_lashes(arm, head, centres)
     build_ears(arm, skin_img)
     build_hair(arm)

@@ -30,7 +30,7 @@ FEATURES = [
     ("socket", 0.033, 0.005, 0.021, 0.0135, -0.0070, True),
     ("temple", 0.066, 0.030, 0.015, 0.0300, -0.0030, True),
     ("under_eye", 0.031, -0.010, 0.016, 0.0060, -0.0022, True),
-    ("cheekbone", 0.052, -0.018, 0.026, 0.0170, +0.0052, True),
+    ("cheekbone", 0.052, -0.018, 0.026, 0.0170, +0.0062, True),
     ("cheek", 0.043, -0.045, 0.026, 0.0220, +0.0030, True),
     ("nasal_bridge", 0.0, -0.008, 0.0070, 0.0200, +0.0068, False),
     ("nose_tip", 0.0, -0.031, 0.0105, 0.0085, +0.0125, False),
@@ -43,8 +43,8 @@ FEATURES = [
     ("mouth_corner", 0.0285, -0.071, 0.0050, 0.0060, -0.0035, True),
     ("mouth_line", 0.0, -0.071, 0.0220, 0.0028, -0.0032, False),
     ("mentolabial", 0.0, -0.089, 0.0140, 0.0045, -0.0035, False),
-    ("chin", 0.0, -0.103, 0.0165, 0.0150, +0.0070, False),
-    ("jaw", 0.055, -0.085, 0.0160, 0.0140, +0.0026, True),
+    ("chin", 0.0, -0.103, 0.0190, 0.0150, +0.0066, False),
+    ("jaw", 0.058, -0.080, 0.0200, 0.0160, +0.0042, True),
 ]
 
 
@@ -219,7 +219,7 @@ def build_head(arm, skin_img):
     u = np.array([v.co[:] for v in bm.verts])
     A, B, C = HEAD_R
     t = np.clip(-u[:, 2], 0, 1)
-    p = np.stack([u[:, 0] * A * (1 - 0.34 * t ** 1.5), u[:, 1] * B * (1 - 0.08 * t), u[:, 2] * C], 1)
+    p = np.stack([u[:, 0] * A * (1 - 0.22 * t ** 1.6), u[:, 1] * B * (1 - 0.06 * t), u[:, 2] * C], 1)
     P = p + HEAD_C
     nrm = np.stack([u[:, 0] / A, u[:, 1] / B, u[:, 2] / C], 1)
     nrm /= np.linalg.norm(nrm, axis=1)[:, None]
@@ -231,6 +231,15 @@ def build_head(arm, skin_img):
         dx = (ax - fx) if sym else (P[:, 0] - fx)
         d += amp * g2(dx, rz - fz, sx, sz)
     P[:, 1] -= wf * d       # forward displacement keeps x/z (and so the painted texture) registered
+    # a few Laplacian passes: features are sharper than the mesh can shade cleanly
+    bm.verts.index_update()
+    ed = np.array([(e.verts[0].index, e.verts[1].index) for e in bm.edges])
+    val = np.bincount(ed.ravel(), minlength=n).astype(float)
+    for _ in range(3):
+        acc = np.zeros_like(P)
+        np.add.at(acc, ed[:, 0], P[ed[:, 1]])
+        np.add.at(acc, ed[:, 1], P[ed[:, 0]])
+        P = P + 0.5 * (acc / val[:, None] - P)
     for i, v in enumerate(bm.verts):
         v.co = Vector(P[i])
 

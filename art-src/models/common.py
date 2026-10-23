@@ -169,6 +169,9 @@ def _enable_cuda():
 def preview(png_path, direction=(-0.7, -1.0, 0.55), size=640, margin=1.25):
     """Cycles preview of the whole scene (not part of the game assets)."""
     scene = bpy.context.scene
+    for o in scene.objects:
+        if o.name.endswith("-convcolonly"):
+            o.hide_render = True  # collision helpers: part of the glTF, not of the picture
     _enable_cuda()
     scene.render.engine = "CYCLES"
     scene.cycles.device = "GPU"

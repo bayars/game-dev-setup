@@ -14,8 +14,8 @@ setup_render(scene, args.size, args.size, args.samples)
 standard_lighting(scene)
 add_camera(scene, ortho_scale=2.95, direction=(0, -1, 0.15))
 
-metal = material("MineMetal", (0.07, 0.075, 0.085), metallic=1.0, roughness=0.3)
-plate = material("MinePlate", (0.16, 0.17, 0.20), metallic=1.0, roughness=0.45)
+metal = material("MineMetal", (0.20, 0.21, 0.25), metallic=1.0, roughness=0.32)
+plate = material("MinePlate", (0.62, 0.65, 0.76), metallic=1.0, roughness=0.34)
 glow = material("MineGlow", (0.2, 0.02, 0.01), roughness=0.4, emission=(1.0, 0.07, 0.03), emission_strength=2.5)
 pivot = new_pivot(scene)  # rolls around the camera axis (Y)
 

@@ -1,8 +1,11 @@
 extends Area2D
-## Greybox player: a square moved with WASD or the arrow keys, kept on screen.
+## Player: a Blender-made hover drone (8-frame idle loop), moved with WASD or the arrow keys.
 
 const SPEED := 420.0
 const HALF := 16.0
+const FPS := 10.0
+
+@onready var sprite: Sprite2D = $Sprite
 
 func _process(delta: float) -> void:
 	var dir := Vector2(
@@ -11,9 +14,7 @@ func _process(delta: float) -> void:
 	position += dir.normalized() * SPEED * delta
 	var size := get_viewport_rect().size
 	position = position.clamp(Vector2(HALF, HALF), size - Vector2(HALF, HALF))
+	sprite.frame = int(Time.get_ticks_msec() / 1000.0 * FPS) % sprite.hframes
 
 func _pressed(a: Key, b: Key) -> bool:
 	return Input.is_physical_key_pressed(a) or Input.is_physical_key_pressed(b)
-
-func _draw() -> void:
-	draw_rect(Rect2(-HALF, -HALF, HALF * 2, HALF * 2), Color(0.3, 0.8, 1.0))

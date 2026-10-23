@@ -1,6 +1,7 @@
 extends Node2D
 ## Game loop: start screen, spawning, lives, score, game over, saved high score.
-## Run with `-- --selftest` (after the project path) for a headless check of the rules.
+## Run with `-- --selftest` (after the project path) for a headless check of the rules,
+## or `-- --autostart` to skip the start screen (handy for screenshots).
 
 enum State { MENU, PLAYING, GAME_OVER }
 
@@ -31,7 +32,7 @@ func _ready() -> void:
 	if not selftest:
 		best = _load_best()
 	_show_menu()
-	if selftest:
+	if selftest or "--autostart" in OS.get_cmdline_user_args():
 		_start()
 
 func _show_menu() -> void:

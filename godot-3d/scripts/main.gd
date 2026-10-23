@@ -150,9 +150,7 @@ func _build_house() -> void:
 	interior_light.light_energy = 0.5
 	interior_light.omni_range = 9.0
 	add_child(interior_light)
-	_add_glow(HOUSE_POS + Vector3(0, 2.45, 3.35), 0.7, 6.0)       # porch light
-	_add_glow(HOUSE_POS + Vector3(-2.35, 1.7, 3.6), 0.35, 4.5)     # window light
-	_add_glow(HOUSE_POS + Vector3(2.35, 1.7, 3.6), 0.35, 4.5)
+	_add_glow(HOUSE_POS + Vector3(0, 2.3, 4.6), 0.5, 5.0)         # porch light (kept away from the wall: close lights blow out)
 
 	# the trigger in front of the door
 	var zone := Area3D.new()

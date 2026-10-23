@@ -16,6 +16,7 @@ scripts/delegate.sh <job> [args]
 |---|---|---|
 | `render` | `delegate.sh render art-src/x.blend 1 1 [--samples N] [--res-percent N]` | `renders/x/frame_0001.png` |
 | `export_gltf` | `delegate.sh export_gltf art-src/x.blend [out.glb]` | `build/gltf/x.glb` (move into `godot/assets/` on the laptop and commit) |
+| `sprites` | `delegate.sh sprites [player\|hazard\|coin\|background\|all] [size]` | `build/sprites/<name>_sheet.png` (8-frame row), `background.png`; source scripts in `art-src/sprites/` |
 | `build_linux` / `build_windows` | `delegate.sh build_linux` | `build/game-<platform>.zip` (needs `godot/project.godot` and `export_presets.cfg`) |
 | `encode` | `delegate.sh encode renders/x/frame_%04d.png renders/x.mp4` | NVENC, libx264 fallback |
 | `gen_test_blend` | `delegate.sh gen_test_blend` | `renders/_gen/test.blend` (made with the server's Blender 4.2.23) |

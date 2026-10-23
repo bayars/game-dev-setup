@@ -12,8 +12,13 @@ PROJECT_DIR="$1"; VERSION="$2"
 NAME="$(sed -n 's/^config\/name="\(.*\)"/\1/p' "$PROJECT_DIR/project.godot" | head -1 | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '-' | sed 's/-*$//')"
 mkdir -p releases
 
+# build both first: delegate.sh needs a clean tree, and copying into releases/ would make it dirty
 for platform in linux windows; do
   NO_OPEN=1 "$ROOT/scripts/delegate.sh" "build_$platform" "$PROJECT_DIR"
-  cp "build/$NAME-$platform.zip" "releases/$NAME-$VERSION-$platform.zip"
+  mkdir -p build/release-tmp && cp "build/$NAME-$platform.zip" "build/release-tmp/"
+done
+for platform in linux windows; do
+  cp "build/release-tmp/$NAME-$platform.zip" "releases/$NAME-$VERSION-$platform.zip"
   echo "RELEASE releases/$NAME-$VERSION-$platform.zip"
 done
+rm -rf build/release-tmp

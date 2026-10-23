@@ -38,6 +38,13 @@ Known mismatch: laptop Blender is 3.4.1. Do not open or save `.blend` files with
 Normal path for any GPU job, from a clean feature branch on the laptop: `scripts/delegate.sh <job> [args]`
 (pushes, runs `remote_run.sh` on the server, pulls results into `renders/` and `build/`).
 
+## Game: Dodger (2D one-screen arcade, Godot)
+
+Move the blue square (WASD/arrows), collect yellow coins (+10), avoid red squares; score = 10 per coin + seconds survived. Space/Enter restarts. Greybox shapes drawn in code; Blender-made sprites come in Week 4.
+- Run: `godot --path godot` (editor: `godot --path godot -e`)
+- Headless loop check: `godot --headless --path godot -- --selftest` prints `SELFTEST_OK` (also works on the exported binary: `game.x86_64 --headless -- --selftest`)
+- Layout: `godot/scenes/` (`main.tscn`, `faller.tscn`), `godot/scripts/` (`main.gd` loop, `player.gd`, `faller.gd`). Input uses physical key checks (no InputMap yet).
+
 ## Status
 
 See `docs/server-baseline.md`. Phase 3 scripts live in `scripts/`.

@@ -1,0 +1,12 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/faller.gd" id="1"]
+
+[sub_resource type="RectangleShape2D" id="Shape_1"]
+size = Vector2(30, 30)
+
+[node name="Faller" type="Area2D"]
+script = ExtResource("1")
+
+[node name="Shape" type="CollisionShape2D" parent="."]
+shape = SubResource("Shape_1")

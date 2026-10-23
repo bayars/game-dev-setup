@@ -67,9 +67,9 @@ L(mask_r.outputs["Color"], neb_mul.inputs["B"])
 
 def stars(scale, near, far, strength, seed):
     v = N("ShaderNodeTexVoronoi")
+    v.voronoi_dimensions = "4D"  # must be set before the W input exists
     v.inputs["Scale"].default_value = scale
     v.inputs["W"].default_value = seed
-    v.voronoi_dimensions = "4D"
     L(coord.outputs["Object"], v.inputs["Vector"])
     mr = N("ShaderNodeMapRange")
     mr.inputs["From Min"].default_value = near
@@ -104,7 +104,6 @@ star_emit.data_type = "RGBA"
 star_emit.blend_type = "MULTIPLY"
 star_emit.inputs["Factor"].default_value = 1.0
 L(star_col.outputs["Result"], star_emit.inputs["A"])
-L(star_sum.outputs[0], star_emit.inputs["B"]) if False else None
 # multiply colour by scalar star brightness through a Math->Combine path
 comb = N("ShaderNodeCombineColor")
 for ch in ("Red", "Green", "Blue"):

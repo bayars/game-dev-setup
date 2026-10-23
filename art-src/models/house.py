@@ -17,8 +17,8 @@ Z0 = 0.06                          # top of the stone plinth = floor level
 TOP = Z0 + H                       # top of the walls
 DOOR_W, DOOR_H = 1.1, 2.2
 
-wall = mat("Wall", "#E9D8B4", roughness=0.9)
-trim = mat("Trim", "#F6F1E7", roughness=0.7)
+wall = mat("Wall", "#D8C196", roughness=0.9)
+trim = mat("Trim", "#EDE6D8", roughness=0.7)
 roof = mat("Roof", "#9C3F25", roughness=0.8)
 roof_dark = mat("RoofRidge", "#6E2A18", roughness=0.8)
 stone = mat("Stone", "#8C8A84", roughness=0.95)
@@ -26,7 +26,7 @@ brick = mat("Brick", "#A5503A", roughness=0.95)
 door_red = mat("DoorRed", "#B3261E", roughness=0.5)
 brass = mat("Brass", "#D8A93A", metallic=1.0, roughness=0.3)
 wood_floor = mat("Floor", "#A9753F", roughness=0.7)
-glass_glow = mat("WindowGlow", "#FFD79A", roughness=0.2, emission="#FFB45A", strength=3.5)
+glass_glow = mat("WindowGlow", "#FFD79A", roughness=0.2, emission="#FFB45A", strength=1.3)
 lamp_glow = mat("LampGlow", "#FFE0A8", roughness=0.3, emission="#FFC06A", strength=5.0)
 porch_glow = mat("PorchGlow", "#FFE0A8", roughness=0.3, emission="#FFC06A", strength=7.0)
 rug_mat = mat("Rug", "#C4523A", roughness=1.0)

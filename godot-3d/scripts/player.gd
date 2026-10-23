@@ -1,12 +1,12 @@
 class_name Player
 extends CharacterBody3D
 ## The walker: WASD/arrows relative to the camera (Shift runs), mouse orbits the camera.
-## The person model is a rigged glTF with animations: idle_loop, walk_loop, run_loop and open_door.
+## The person model is a rigged glTF with animations: idle, walk, run (all looping) and open_door.
 ## Walk/run playback speed follows the real movement speed so the feet do not slide.
 
 const WALK_SPEED := 2.4
 const RUN_SPEED := 4.6
-const WALK_NATURAL := 1.75   # m/s one pass of walk_loop covers at speed_scale 1
+const WALK_NATURAL := 1.75   # m/s one pass of the walk clip covers at speed_scale 1
 const RUN_NATURAL := 4.6
 const ACCEL := 14.0
 const GRAVITY := 20.0
@@ -38,7 +38,7 @@ func setup(model_scene: PackedScene) -> void:
 	add_child(model)
 	_anim = model.find_child("AnimationPlayer", true, false)
 	if _anim:
-		_anim.play("idle_loop")
+		_anim.play("idle")
 
 	_rig = Node3D.new()
 	_rig.top_level = true
@@ -119,14 +119,14 @@ func _animate(_delta: float) -> void:
 	if _anim == null or _action:
 		return
 	var planar := Vector2(velocity.x, velocity.z).length()
-	var clip := "idle_loop"
+	var clip := "idle"
 	var scale := 1.0
 	if planar > 0.15:
 		if run or Input.is_physical_key_pressed(KEY_SHIFT):
-			clip = "run_loop"
+			clip = "run"
 			scale = planar / RUN_NATURAL
 		else:
-			clip = "walk_loop"
+			clip = "walk"
 			scale = planar / WALK_NATURAL
 	if _anim.current_animation != clip:
 		_anim.play(clip, 0.25)

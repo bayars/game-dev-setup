@@ -428,7 +428,7 @@ func _autoplay_step(delta: float) -> void:
 
 func _check_result() -> void:
 	var p := player.global_position
-	for clip in ["idle_loop", "walk_loop", "run_loop", "open_door"]:
+	for clip in ["idle", "walk", "run", "open_door"]:
 		if not player.has_animation(clip):
 			_fail("missing animation " + clip)
 			return

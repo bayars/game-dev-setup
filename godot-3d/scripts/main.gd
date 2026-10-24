@@ -15,10 +15,35 @@ const PINE := preload("res://assets/models/tree_pine.glb")
 const ROUND_TREE := preload("res://assets/models/tree_round.glb")
 const LAMP := preload("res://assets/models/lamp.glb")
 
+## Blender material name -> PBR texture set (see Graphics.retexture).
+const HOUSE_MATS := {
+	"Wall": {"tex": "plaster", "m": 2.2},
+	"Trim": {"tex": "wood", "m": 1.4, "tint": Color(0.93, 0.9, 0.84), "ns": 0.5, "rough": 0.8},
+	"Roof": {"tex": "roof", "m": 2.4},
+	"RoofRidge": {"tex": "roof", "m": 2.4, "tint": Color(0.55, 0.45, 0.42)},
+	"Stone": {"tex": "stone", "m": 3.0},
+	"Brick": {"tex": "brick", "m": 1.7},
+	"Floor": {"tex": "wood", "m": 1.3},
+	"WoodDark": {"tex": "wood", "m": 1.0, "tint": Color(0.55, 0.5, 0.48)},
+	"DoorRed": {"tex": "wood", "m": 1.0, "tint": Color(1.35, 0.30, 0.25), "world": false, "ns": 0.6, "rough": 0.7},
+	"Plant": {"tex": "foliage", "m": 0.5, "orig": 1.7},
+}
+const TREE_MATS := {
+	"Bark": {"tex": "bark", "m": 1.4, "world": false},
+	"Bark2": {"tex": "bark", "m": 1.4, "world": false},
+	"PineA": {"tex": "foliage", "m": 1.3, "orig": 1.8, "world": false},
+	"PineB": {"tex": "foliage", "m": 1.3, "orig": 1.8, "world": false},
+	"PineC": {"tex": "foliage", "m": 1.3, "orig": 1.8, "world": false},
+	"LeafA": {"tex": "foliage", "m": 1.3, "orig": 1.8, "world": false},
+	"LeafB": {"tex": "foliage", "m": 1.3, "orig": 1.8, "world": false},
+	"LeafC": {"tex": "foliage", "m": 1.3, "orig": 1.8, "world": false},
+}
+
 const HOUSE_POS := Vector3(0, 0, -18)   # the house front (door side) faces +Z, toward the player
 const SPAWN := Vector3(0, 0.05, 13)
 
 var phase := Phase.TITLE
+var gfx: Graphics
 var player: Player
 var door_hinge: Node3D
 var interior_light: OmniLight3D
@@ -31,6 +56,7 @@ var _sub: Label
 var _story: Label
 var _objective: Label
 var _hint: Label
+var _toast: Label
 var _time := 0.0
 var _selftest := false
 var _autoplay := false
@@ -45,14 +71,23 @@ func _ready() -> void:
 	for a in args:
 		if a.begins_with("--start-z="):
 			_spawn_z = float(a.substr(10))
-	_build_environment()
+	gfx = Graphics.new()
+	add_child(gfx)
+	gfx.build_environment(self)
 	_build_ground()
 	_build_house()
 	_build_trees()
 	_build_lamps()
 	_build_garden()
+	gfx.build_grass(self, _grass_keep_out)
+	var forced := ""
+	for a in args:
+		if a.begins_with("--quality="):
+			forced = a.substr(10)
+	gfx.load_level("low" if _selftest else forced, not _selftest)
 	_build_player()
 	_build_ui()
+	gfx.changed.connect(_on_quality_changed)
 	if _selftest:
 		Engine.time_scale = 4.0
 	_show_title()
@@ -65,36 +100,6 @@ func _flat(color: Color, roughness: float = 0.9) -> StandardMaterial3D:
 	m.roughness = roughness
 	return m
 
-func _build_environment() -> void:
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.09, 0.12, 0.30)
-	sky_mat.sky_horizon_color = Color(0.95, 0.52, 0.34)
-	sky_mat.ground_horizon_color = Color(0.55, 0.36, 0.30)
-	sky_mat.ground_bottom_color = Color(0.10, 0.09, 0.12)
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
-	var env := Environment.new()
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.7
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.82, 0.52, 0.45)
-	env.fog_density = 0.007
-	env.fog_sky_affect = 0.25
-	var world_env := WorldEnvironment.new()
-	world_env.environment = env
-	add_child(world_env)
-
-	var sun := DirectionalLight3D.new()
-	sun.light_color = Color(1.0, 0.70, 0.50)
-	sun.light_energy = 0.85
-	sun.rotation_degrees = Vector3(-14, 18, 0)   # low evening sun, behind the player
-	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 70.0
-	add_child(sun)
-
 func _build_ground() -> void:
 	var body := StaticBody3D.new()
 	var shape := CollisionShape3D.new()
@@ -105,42 +110,48 @@ func _build_ground() -> void:
 	body.add_child(shape)
 	add_child(body)
 
-	var grass := MeshInstance3D.new()
+	var grass := MeshInstance3D.new()      # grass + gravel path in one shader (see shaders/ground.gdshader)
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(300, 300)
 	grass.mesh = plane
-	grass.material_override = _flat(Color(0.20, 0.33, 0.15), 1.0)
+	grass.material_override = gfx.ground_material()
 	add_child(grass)
-
-	# the path: from far behind the player to the porch
-	var path := MeshInstance3D.new()
-	var path_mesh := BoxMesh.new()
-	path_mesh.size = Vector3(2.4, 0.05, 33.0)
-	path.mesh = path_mesh
-	path.position = Vector3(0, 0.025, 2.9)
-	path.material_override = _flat(Color(0.62, 0.54, 0.43), 1.0)
-	add_child(path)
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
-	var stone_mat := _flat(Color(0.52, 0.50, 0.48), 1.0)
+	var stone_mat := gfx.pbr("stone", 0.8, Color(0.9, 0.88, 0.84), true, 1.2)
 	var z := 18.0
 	while z > -13.0:
 		for side in [-1.0, 1.0]:
-			var stone := MeshInstance3D.new()
-			var sm := BoxMesh.new()
-			sm.size = Vector3(rng.randf_range(0.3, 0.55), rng.randf_range(0.12, 0.25), rng.randf_range(0.3, 0.5))
+			var stone := MeshInstance3D.new()      # edging stones: flattened, slightly lumpy spheres
+			var sm := SphereMesh.new()
+			sm.radial_segments = 20
+			sm.rings = 10
+			var w := rng.randf_range(0.3, 0.55)
+			var h := rng.randf_range(0.12, 0.25)
+			sm.radius = 0.5
+			sm.height = 1.0
 			stone.mesh = sm
+			stone.scale = Vector3(w, h, rng.randf_range(0.3, 0.5))
 			stone.material_override = stone_mat
-			stone.position = Vector3(side * rng.randf_range(1.3, 1.5), sm.size.y * 0.35, z + rng.randf_range(-0.3, 0.3))
+			stone.position = Vector3(side * rng.randf_range(1.3, 1.5), h * 0.3, z + rng.randf_range(-0.3, 0.3))
 			stone.rotation.y = rng.randf() * TAU
 			add_child(stone)
 		z -= rng.randf_range(1.2, 1.9)
+
+## True where grass blades must not grow: on the path, under the house and porch, in the flower beds.
+func _grass_keep_out(p: Vector2) -> bool:
+	if absf(p.x) < 1.55 and p.y > -14.5:
+		return true
+	if absf(p.x) < 6.0 and p.y < -12.8 and p.y > -22.5:
+		return true
+	return false
 
 func _build_house() -> void:
 	var house: Node3D = HOUSE.instantiate()
 	house.position = HOUSE_POS
 	add_child(house)
+	gfx.retexture(house, HOUSE_MATS)
 	door_hinge = house.find_child("DoorHinge", true, false)
 	if door_hinge == null:
 		push_error("house.glb has no DoorHinge node")
@@ -150,6 +161,7 @@ func _build_house() -> void:
 	interior_light.light_color = Color(1.0, 0.74, 0.44)
 	interior_light.light_energy = 0.5
 	interior_light.omni_range = 9.0
+	interior_light.light_volumetric_fog_energy = 1.0
 	add_child(interior_light)
 	_add_glow(HOUSE_POS + Vector3(0, 2.3, 4.6), 0.5, 5.0)         # porch light (kept away from the wall: close lights blow out)
 
@@ -198,6 +210,7 @@ func _build_trees() -> void:
 		tree.rotation.y = rng.randf() * TAU
 		tree.scale = Vector3.ONE * rng.randf_range(0.8, 1.5)
 		add_child(tree)
+		gfx.retexture(tree, TREE_MATS)
 
 func _build_lamps() -> void:
 	for spot in [Vector2(-2.3, 9.0), Vector2(2.3, 2.0), Vector2(-2.3, -5.0), Vector2(2.3, -10.5)]:
@@ -209,15 +222,18 @@ func _build_lamps() -> void:
 		l.light_color = Color(1.0, 0.72, 0.42)
 		l.light_energy = 1.7
 		l.omni_range = 9.0
+		gfx.add_lamp_light(l)
 		add_child(l)
 
 func _build_garden() -> void:
-	var bush_mat := _flat(Color(0.22, 0.42, 0.2), 1.0)
+	var bush_mat := gfx.pbr("foliage", 0.7, Color(0.26, 0.5, 0.24), true, 1.3)
 	for x in [-3.55, -2.35, 2.35, 3.55]:
 		var bush := MeshInstance3D.new()
 		var sm := SphereMesh.new()
 		sm.radius = 0.55
 		sm.height = 0.95
+		sm.radial_segments = 32
+		sm.rings = 16
 		bush.mesh = sm
 		bush.material_override = bush_mat
 		bush.position = HOUSE_POS + Vector3(x, 0.4, 3.3)
@@ -246,6 +262,7 @@ func _build_player() -> void:
 	player.position = Vector3(SPAWN.x, SPAWN.y, _spawn_z)
 	add_child(player)
 	player.setup(PERSON)
+	gfx.style_person(player.model)
 	player.frozen = true
 
 # ---------------------------------------------------------------- UI
@@ -290,11 +307,25 @@ func _build_ui() -> void:
 	_hint.offset_bottom = -80.0
 	_hint.modulate.a = 0.0
 	layer.add_child(_hint)
+	_toast = _label(20, Color(1, 1, 1), HORIZONTAL_ALIGNMENT_RIGHT, VERTICAL_ALIGNMENT_TOP)
+	_toast.offset_right = -24.0
+	_toast.offset_top = 18.0
+	_toast.modulate.a = 0.0
+	layer.add_child(_toast)
 	_objective = _label(22, Color(1, 1, 1), HORIZONTAL_ALIGNMENT_LEFT, VERTICAL_ALIGNMENT_TOP)
 	_objective.offset_left = 28.0
 	_objective.offset_top = 22.0
 	_objective.modulate.a = 0.0
 	layer.add_child(_objective)
+
+func _on_quality_changed(level_name: String) -> void:
+	if _toast == null:
+		return
+	_toast.text = "Graphics: %s   (G to change)" % level_name
+	_toast.modulate.a = 1.0
+	var t := create_tween()
+	t.tween_interval(2.0)
+	t.tween_property(_toast, "modulate:a", 0.0, 0.8)
 
 func _fade(node: CanvasItem, alpha: float, seconds: float) -> Tween:
 	var t := create_tween()
@@ -319,16 +350,18 @@ func _show_title() -> void:
 	player.cam_distance = 1.75
 	player.cam_pitch = -0.02
 	player.cam_focus = 1.60
+	gfx.set_portrait(true)
 	if _portrait_light == null:      # soft warm light from the camera side, only for the title portrait
 		_portrait_light = DirectionalLight3D.new()
 		_portrait_light.light_color = Color(1.0, 0.86, 0.72)
-		_portrait_light.light_energy = 1.0
+		_portrait_light.light_energy = 2.2
 		_portrait_light.rotation_degrees = Vector3(-12, 200, 0)
 		_portrait_light.shadow_enabled = false
 		add_child(_portrait_light)
 
 func _begin() -> void:
 	phase = Phase.WALK
+	gfx.set_portrait(false)
 	_fade(_title, 0.0, 0.8)
 	_fade(_sub, 0.0, 0.8)
 	# the camera swings from the portrait in front of the walker to the follow position behind
@@ -407,6 +440,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_E:
 				if phase == Phase.AT_DOOR:
 					_open_door()
+			KEY_G:
+				gfx.cycle()
 			KEY_R:
 				if phase == Phase.END:
 					get_tree().reload_current_scene()

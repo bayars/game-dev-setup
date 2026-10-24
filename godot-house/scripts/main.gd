@@ -352,6 +352,7 @@ func start_job(job: Job) -> void:
 	current.stop()
 	if helper:
 		_take_pair_posts(job, helper)
+		_board_dirty = true
 	_rings[job.id].visible = false
 	install.start(job, current, helper, site, cam)
 	_show_hint_once("install")
@@ -387,6 +388,7 @@ func _release_install(job: Job) -> void:
 	current.busy = false
 	if job.needs_two:
 		other().busy = false
+		_board_dirty = true
 
 func complete_job(job: Job) -> void:
 	if job.done:

@@ -17,7 +17,8 @@ scripts/delegate.sh <job> [args]
 | `render` | `delegate.sh render art-src/x.blend 1 1 [--samples N] [--res-percent N]` | `renders/x/frame_0001.png` |
 | `export_gltf` | `delegate.sh export_gltf art-src/x.blend [out.glb]` | `build/gltf/x.glb` (move into `godot/assets/` on the laptop and commit) |
 | `sprites` | `delegate.sh sprites [player\|hazard\|coin\|background\|all] [size]` | `build/sprites/<name>_sheet.png` (8-frame row), `background.png`; source scripts in `art-src/sprites/` |
-| `build_linux` / `build_windows` | `delegate.sh build_linux` | `build/game-<platform>.zip` (needs `godot/project.godot` and `export_presets.cfg`) |
+| `models` | `delegate.sh models [person\|house\|tree_pine\|tree_round\|lamp\|all]` | `build/models/<name>.glb` and `<name>_preview.png`; sources in `art-src/models/` |
+| `build_linux` / `build_windows` | `delegate.sh build_linux [project_dir]` | `build/<name>-<platform>.zip` (needs `<project_dir>/project.godot` and `export_presets.cfg`; default `godot`) |
 | `encode` | `delegate.sh encode renders/x/frame_%04d.png renders/x.mp4` | NVENC, libx264 fallback |
 | `gen_test_blend` | `delegate.sh gen_test_blend` | `renders/_gen/test.blend` (made with the server's Blender 4.2.23) |
 
@@ -29,3 +30,5 @@ Design notes:
 - All binaries are called by absolute path (`/opt/blender/blender`, `/opt/godot/godot`); `~/bin` is not on the non-interactive PATH.
 - Generated files never land in tracked folders on the server, so the checkout stays clean and `git checkout` never collides with them.
 - Server logs older than 14 days are pruned by `remote_run.sh`.
+
+Releases: `scripts/release.sh <project_dir> <version>` builds both platforms and puts the zips in `releases/` (Git LFS); commit them on the laptop.

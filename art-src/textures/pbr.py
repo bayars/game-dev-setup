@@ -163,8 +163,8 @@ def grass(b):
 
 
 def path(b):
-    d, c = b.voronoi(11.0)
-    pebble = b.math("SUBTRACT", 1.0, stretch(b, d, 0.12, 0.62))          # 1 on the pebble, 0 in the crevice
+    d, c = b.voronoi(4.2)
+    pebble = b.math("SUBTRACT", 1.0, stretch(b, d, 0.22, 0.78))          # 1 on the pebble, 0 in the crevice
     tone = b.ramp(b.bw(c), [(0.0, "#6B5C48"), (0.4, "#9A8A70"), (0.75, "#B7A78C"), (1.0, "#7C7A74")])
     dirt = b.ramp(b.noise(30, detail=4), [(0.0, "#3B3026"), (1.0, "#5C4C3A")])
     col = b.mix(stretch(b, pebble, 0.05, 0.5), dirt, tone)
@@ -183,8 +183,8 @@ def plaster(b):
 
 
 def roof(b):
-    tile, fac = b.brick(4.0, "#B04A2C", "#8E3822", "#34170F", msize=0.025, width=0.5, height=0.25, offset=0.5)
-    rowv = b.math("FRACT", b.math("MULTIPLY", b.v, 16.0))               # 16 rows per tile
+    tile, fac = b.brick(3.0, "#B04A2C", "#8E3822", "#34170F", msize=0.025, width=0.5, height=0.25, offset=0.5)
+    rowv = b.math("FRACT", b.math("MULTIPLY", b.v, 12.0))               # 12 rows per tile
     drop = b.math("SUBTRACT", 1.0, rowv)                                  # shadow under each row's lower edge
     n = b.noise(6, detail=4)
     streak = b.noise(ku=3, kv=18, detail=3) if False else b.noise(3, 18, detail=3)

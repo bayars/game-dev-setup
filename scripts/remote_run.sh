@@ -2,7 +2,7 @@
 # Runs ON THE SERVER. Checks out an exact pushed commit and runs one job under
 # flock + timeout, logging to ~/work/logs. Usage:
 #   remote_run.sh [--detach] <branch> <job> [args...]
-# Jobs: render, export_gltf, sprites, models, build_linux, build_windows, encode, gen_test_blend
+# Jobs: render, export_gltf, sprites, models, textures, build_linux, build_windows, encode, gen_test_blend
 # Env:  TIMEOUT (default 2h), MAX_TEMP (default 80)
 set -euo pipefail
 
@@ -46,6 +46,7 @@ case "$JOB" in
   export_gltf)    CMD=("$ROOT/scripts/export_gltf.sh" "$@") ;;
   models)         CMD=("$ROOT/scripts/models.sh" "$@") ;;
   sprites)        CMD=("$ROOT/scripts/sprites.sh" "$@") ;;
+  textures)       CMD=("$ROOT/scripts/textures.sh" "$@") ;;
   build_linux)    CMD=("$ROOT/scripts/build.sh" linux "$@") ;;
   build_windows)  CMD=("$ROOT/scripts/build.sh" windows "$@") ;;
   encode)         CMD=("$ROOT/scripts/encode.sh" "$@") ;;

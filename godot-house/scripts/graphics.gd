@@ -100,7 +100,7 @@ func style_person(root: Node) -> void:
 				m.rim_enabled = true
 				m.rim = 0.15
 				m.rim_tint = 0.5
-			elif n == "Hair":
+			elif n.begins_with("Hair"):
 				m.rim_enabled = true
 				m.rim = 0.5
 				m.rim_tint = 0.4

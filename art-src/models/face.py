@@ -11,7 +11,7 @@ import math
 import bmesh
 import bpy
 import numpy as np
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 HEAD_C = np.array([0.0, 0.0, 1.685])
 HEAD_R = np.array([0.074, 0.095, 0.118])      # ellipsoid radii before the features are sculpted in
@@ -20,7 +20,22 @@ EYE_Z = 1.690
 EYE_A, EYE_B = 0.0138, 0.0052                  # half width / half height of the lid opening
 EYE_TILT = 0.09                                # outer corner sits a little higher than the inner one
 EYEBALL_R = 0.0118
-SKIN_SRGB = np.array([226, 174, 139]) / 255.0
+SKIN_SRGB = np.array([226, 174, 139]) / 255.0   # set from the profile by build()
+FACE = {}                                        # the profile's "face" table (people.py)
+
+# profile factor that scales each sculpted feature
+FEATURE_GROUPS = {"brow_ridge": "brow", "glabella": "brow", "jaw": "jaw", "chin": "jaw", "nasal_bridge": "nose",
+                  "nose_tip": "nose", "alar": "nose", "upper_lip": "lip", "lower_lip": "lip"}
+
+
+def hex01(h):
+    h = h.lstrip("#")
+    return np.array([int(h[i:i + 2], 16) for i in (0, 2, 4)]) / 255.0
+
+
+def lin(h):
+    c = hex01(h)
+    return tuple(np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4))
 
 # name, x, z (relative to head centre), width_x, width_z, amplitude (m, along the surface normal), mirrored
 FEATURES = [
@@ -119,49 +134,82 @@ def make_image(name, arr):
 
 # ----------------------------------------------------------------------------- skin texture
 def paint_skin(size=1024):
-    """Front-projected face texture: x in [-0.1, 0.1] m, z in [1.56, 1.82] m (matches the head UVs)."""
+    """Front-projected face texture: x in [-0.1, 0.1] m, z in [1.56, 1.82] m (matches the head UVs).
+    Tones are relative to the profile's skin colour, so every skin tone gets the same face painting."""
     S = size
     ys, xs = np.mgrid[0:S, 0:S]
     X = (xs + 0.5) / S * 0.2 - 0.1
     Z = 1.56 + (ys + 0.5) / S * 0.26
     rng = np.random.default_rng(11)
-    img = np.ones((S, S, 3)) * SKIN_SRGB
+    base = SKIN_SRGB
+    img = np.ones((S, S, 3)) * base
 
     def blend(mask, color, alpha):
         a = np.clip(mask * alpha, 0, 1)[..., None]
         img[:] = img * (1 - a) + np.array(color) * a
 
+    def tone(r, g, b):
+        return np.clip(base * np.array([r, g, b]), 0, 1)
+
+    lips = hex01(FACE.get("lips", "#A84C4A"))
     mott = sum(rng.uniform(.4, 1) * np.sin(rng.uniform(40, 150) * (X * np.cos(t) + Z * np.sin(t)) + rng.uniform(0, 6.3))
                for t in rng.uniform(0, 6.3, 7)) / 7.0
     img *= (1 + 0.035 * mott)[..., None]
-    blend(sstep((Z - 1.735) / 0.05), (0.93, 0.74, 0.62), 0.25)                     # lighter forehead
+    blend(sstep((Z - 1.735) / 0.05), tone(1.04, 1.04, 1.05), 0.25)                     # lighter forehead
     for s in (1, -1):
-        blend(g2(X - s * 0.046, Z - 1.640, 0.026, 0.022), (0.93, 0.50, 0.46), 0.26)  # cheek blush
-        blend(g2(X - s * 0.031, Z - 1.675, 0.017, 0.0055), (0.60, 0.43, 0.47), 0.22)  # under-eye shadow
-        blend(g2(X - s * 0.031, Z - 1.706, 0.016, 0.0045), (0.80, 0.52, 0.48), 0.20)  # lid colour
-        blend(g2(X - s * 0.031, Z - 1.7005, 0.0135, 0.0011), (0.55, 0.34, 0.30), 0.35)  # lid crease
-        blend(g2(X - s * 0.0095, Z - 1.6425, 0.0036, 0.0030), (0.30, 0.13, 0.12), 0.75)  # nostrils
-        blend(g2(X - s * 0.0185, Z - 1.6505, 0.0070, 0.0065), (0.92, 0.52, 0.47), 0.18)  # nose wings
-    blend(g2(X, Z - 1.654, 0.0105, 0.0085), (0.92, 0.50, 0.46), 0.22)                # nose tip
-    blend(g2(X, Z - 1.6265, 0.0172, 0.0066), (0.64, 0.28, 0.30), 0.93)                # upper lip
-    blend(g2(X, Z - 1.6055, 0.0160, 0.0072), (0.74, 0.35, 0.36), 0.93)               # lower lip
+        blend(g2(X - s * 0.046, Z - 1.640, 0.026, 0.022), tone(1.02, 0.74, 0.76), 0.26)  # cheek blush
+        blend(g2(X - s * 0.031, Z - 1.675, 0.017, 0.0055), tone(0.70, 0.62, 0.72), 0.22)  # under-eye shadow
+        blend(g2(X - s * 0.031, Z - 1.706, 0.016, 0.0045), tone(0.92, 0.76, 0.78), 0.20)  # lid colour
+        blend(g2(X - s * 0.031, Z - 1.7005, 0.0135, 0.0011), tone(0.62, 0.50, 0.50), 0.35)  # lid crease
+        blend(g2(X - s * 0.0095, Z - 1.6425, 0.0036, 0.0030), tone(0.34, 0.19, 0.20), 0.75)  # nostrils
+        blend(g2(X - s * 0.0185, Z - 1.6505, 0.0070, 0.0065), tone(1.02, 0.76, 0.76), 0.18)  # nose wings
+    blend(g2(X, Z - 1.654, 0.0105, 0.0085), tone(1.02, 0.74, 0.74), 0.22)                # nose tip
+    blend(g2(X, Z - 1.6265, 0.0172, 0.0066), lips * 0.85, 0.93)                         # upper lip
+    blend(g2(X, Z - 1.6055, 0.0160, 0.0072), lips, 0.93)                                # lower lip
     line = np.exp(-((Z - 1.6135) / 0.0011) ** 2) * np.exp(-(X / 0.0235) ** 4)
-    blend(line, (0.34, 0.12, 0.13), 0.95)                                             # mouth line
-    blend(g2(X, Z - 1.589, 0.012, 0.005), (0.78, 0.55, 0.50), 0.10)                  # chin
-    img += rng.normal(0, 0.008, img.shape)                                             # fine grain
-    for _ in range(22):                                                                # a few freckles
-        fx, fz = rng.uniform(0.018, 0.058) * rng.choice((-1, 1)), rng.uniform(1.655, 1.690)
-        blend(g2(X - fx, Z - fz, 0.0010, 0.0010), (0.70, 0.50, 0.38), 0.20)
+    blend(line, lips * 0.42, 0.95)                                                      # mouth line
+    blend(g2(X, Z - 1.589, 0.012, 0.005), tone(0.92, 0.80, 0.80), 0.10)                 # chin
+    img += rng.normal(0, 0.008, img.shape)                                              # fine grain
+    for _ in range(int(FACE.get("freckles", 22))):                                      # freckles
+        fx, fz = rng.uniform(0.012, 0.060) * rng.choice((-1, 1)), rng.uniform(1.645, 1.695)
+        blend(g2(X - fx, Z - fz, 0.0010, 0.0010), tone(0.80, 0.66, 0.55), 0.22)
+
+    brown = hex01(FACE.get("brows", "#29170D"))
+    stubble = float(FACE.get("stubble", 0.0))
+    if stubble > 0:
+        # short beard shadow on the jaw, chin and upper lip; the lips and cheeks stay clear
+        zone = sstep((1.652 - Z) / 0.012) * sstep((0.072 - np.abs(X)) / 0.012)
+        zone = np.maximum(zone, g2(X, Z - 1.632, 0.020, 0.0035))                           # moustache
+        zone *= 1 - np.clip(g2(X, Z - 1.616, 0.019, 0.010) * 1.6, 0, 1)                     # not on the lips
+        dots = (rng.random((S, S)) < 0.35).astype(float)
+        blend(zone * (0.45 + 0.55 * dots), brown * 0.9 + base * 0.1, 0.62 * stubble)
+    wr = float(FACE.get("wrinkles", 0.0))
+    if wr > 0:
+        crease = tone(0.70, 0.58, 0.58)
+        for k, zf in enumerate((1.748, 1.759, 1.770)):                                      # forehead lines
+            wave = zf + 0.0012 * np.sin(X * 90 + k)
+            blend(np.exp(-((Z - wave) / 0.0007) ** 2) * np.exp(-(X / 0.034) ** 4), crease, 0.45 * wr)
+        for s in (1, -1):
+            for ang in (-0.35, 0.0, 0.35):                                                  # crow's feet
+                ox, oz = s * 0.050, 1.690
+                u = (X - ox) * s * np.cos(ang) + (Z - oz) * np.sin(ang)
+                v = -(X - ox) * s * np.sin(ang) + (Z - oz) * np.cos(ang)
+                blend(np.exp(-(v / 0.0006) ** 2) * sstep(u / 0.002) * sstep((0.012 - u) / 0.004), crease, 0.5 * wr)
+            # nasolabial fold: from the nose wing down past the mouth corner
+            t = np.clip((1.648 - Z) / 0.040, 0, 1)
+            cx = s * (0.024 + 0.010 * t)
+            blend(np.exp(-((X - cx) / 0.0012) ** 2) * sstep((1.650 - Z) / 0.004) * sstep((Z - 1.606) / 0.006),
+                  crease, 0.55 * wr)
+            blend(g2(X - s * 0.031, Z - 1.668, 0.016, 0.004), tone(0.78, 0.66, 0.70), 0.25 * wr)  # under-eye bags
 
     # eyebrows: individual hair strokes along an arch, thick at the inner end, tapering outward
     brow = np.zeros((S, S))
-    brown = np.array([0.16, 0.09, 0.05])
     for s in (1, -1):
         for _ in range(380):
             t = rng.beta(1.15, 1.6)
             cx = s * (0.013 + 0.041 * t)
             cz = 1.7125 + 0.0095 * math.sin(math.pi * (t * 0.82 + 0.06)) - 0.0035 * t ** 2
-            width = 0.0052 * (1 - t) + 0.0016
+            width = (0.0052 * (1 - t) + 0.0016) * FACE.get("brow_width", 1.0)
             px = cx + rng.normal(0, 0.0007)
             pz = cz + rng.uniform(-width / 2, width / 2)
             ang = math.radians(35 - 55 * t + rng.normal(0, 8))   # hairs sweep up, then lie flat outward
@@ -198,8 +246,7 @@ def paint_eye(size=512):
     ir = 0.33                                                                          # iris radius
     iris = np.ones((S, S, 3))
     radial = sstep((r - 0.115) / (ir - 0.115))                                         # 0 at pupil, 1 at limbus
-    inner = np.array([0.60, 0.40, 0.19])
-    outer = np.array([0.30, 0.17, 0.08])
+    inner, outer = (hex01(c) for c in FACE.get("eyes", ("#996633", "#4D2B14")))
     iris = inner * (1 - radial[..., None]) + outer * radial[..., None]
     iris *= (0.72 + 0.5 * (0.6 * fib + 0.4 * fib2))[..., None]
     iris *= (1 - 0.55 * sstep((r - 0.285) / 0.045))[..., None]                         # dark limbal ring
@@ -231,9 +278,9 @@ def build_head(arm, skin_img):
     rz = P[:, 2] - HEAD_C[2]
     ax = np.abs(P[:, 0])
     d = np.zeros(n)
-    for _, fx, fz, sx, sz, amp, sym in FEATURES:
+    for name, fx, fz, sx, sz, amp, sym in FEATURES:
         dx = (ax - fx) if sym else (P[:, 0] - fx)
-        d += amp * g2(dx, rz - fz, sx, sz)
+        d += amp * FACE.get(FEATURE_GROUPS.get(name, ""), 1.0) * g2(dx, rz - fz, sx, sz)
     P[:, 1] -= wf * d       # forward displacement keeps x/z (and so the painted texture) registered
     # a few Laplacian passes: features are sharper than the mesh can shade cleanly
     bm.verts.index_update()
@@ -411,7 +458,7 @@ def build_lashes(arm, head, centres):
             out = Vector((s * (base.x - s * EYE_X) * s, 0.0, base.z - EYE_Z))
             out = Vector((base.x - s * EYE_X, 0.0, base.z - EYE_Z)).normalized()
             direction = Vector((out.x * 0.55, -0.80, out.z * 0.95 + 0.25)).normalized()
-            length = rng.uniform(0.0045, 0.0065) * (0.65 + 0.7 * math.sin(math.pi * t))
+            length = rng.uniform(0.0045, 0.0065) * (0.65 + 0.7 * math.sin(math.pi * t)) * FACE.get("lashes", 1.0)
             items.append((base, direction, length))
         bm = bmesh.new()
         for base, direction, length in items:
@@ -471,23 +518,71 @@ def _front_uv(obj):
 
 
 # ----------------------------------------------------------------------------- hair
-def _hair_end_theta(phi):
+def _wrap(a):
+    return (a + math.pi) % (2 * math.pi) - math.pi
+
+
+def _hair_end_theta(phi, style="short"):
     """Polar angle (from the crown) where hair stops, by azimuth (0 = front, +-pi = back)."""
-    a = abs((phi + math.pi) % (2 * math.pi) - math.pi)
+    a = abs(_wrap(phi))
     if a < 1.15:
-        return 0.86 + 0.30 * (a / 1.15) ** 1.6
-    if a < 1.95:
-        return 1.16 + 0.14 * (a - 1.15) / 0.8
-    return 1.30 + 0.55 * min(1.0, (a - 1.95) / 0.9)
+        t = 0.86 + 0.30 * (a / 1.15) ** 1.6
+    elif a < 1.95:
+        t = 1.16 + 0.14 * (a - 1.15) / 0.8
+    else:
+        t = 1.30 + 0.55 * min(1.0, (a - 1.95) / 0.9)
+    if style in ("cropped", "receding"):
+        t -= 0.05 + 0.10 * min(1.0, a / 1.5)      # short back and sides
+    elif style == "messy":
+        t += 0.04
+    return t
 
 
-def build_hair(arm, seed=4):
+# strands per style, and how high they stand off the scalp
+HAIR_STYLES = {"short": (330, (0.0015, 0.0075)), "cropped": (440, (0.0008, 0.0030)),
+               "messy": (380, (0.0030, 0.0130)), "long": (430, (0.0015, 0.0060)),
+               "ponytail": (380, (0.0008, 0.0030)), "bun": (360, (0.0008, 0.0030)),
+               "receding": (300, (0.0008, 0.0028))}
+
+
+def _tube(bm, centers, normals, r0, mat_i, taper=0.9):
+    """A tapered five-sided tube along `centers` (one hair strand)."""
+    n = len(centers)
+    rings = []
+    for k in range(n):
+        t = k / (n - 1)
+        tangent = centers[min(k + 1, n - 1)] - centers[max(k - 1, 0)]
+        tangent = tangent / (np.linalg.norm(tangent) + 1e-9)
+        side = np.cross(tangent, normals[k])
+        side /= np.linalg.norm(side) + 1e-9
+        nrm = np.cross(side, tangent)
+        rad = r0 * (1.0 - taper * t ** 1.25)
+        rings.append([bm.verts.new(Vector(centers[k] + rad * (math.cos(2 * math.pi * a / 5) * nrm * 0.65
+                                                              + math.sin(2 * math.pi * a / 5) * side)))
+                      for a in range(5)])
+    for ring in (rings[0], rings[-1]):
+        try:
+            bm.faces.new(ring).material_index = mat_i
+        except ValueError:
+            pass
+    for k in range(n - 1):
+        for a in range(5):
+            f = bm.faces.new((rings[k][a], rings[k][(a + 1) % 5], rings[k + 1][(a + 1) % 5], rings[k + 1][a]))
+            f.material_index = mat_i
+            f.smooth = True
+
+
+def build_hair(arm, hair, seed=4):
+    """Strand hair over a scalp shell. Styles: short, cropped, messy, long, ponytail, bun, receding."""
+    style = hair.get("style", "short")
     rng = np.random.default_rng(seed)
+    grey = float(hair.get("grey", 0.0))
+    base = np.array(lin(hair.get("colour", "#2A160B"))) * (1 - grey) + np.array(lin("#C9C5BF")) * grey
     cols = [bpy.data.materials.new(f"Hair{i}") for i in range(3)]
-    for m, c, r in zip(cols, ((0.095, 0.050, 0.028), (0.135, 0.075, 0.040), (0.070, 0.038, 0.022)), (0.42, 0.38, 0.45)):
+    for m, k, r in zip(cols, ((1.0, 1.0, 1.0), (1.35, 1.32, 1.28), (0.72, 0.72, 0.74)), (0.42, 0.38, 0.45)):
         m.use_nodes = True
         b = m.node_tree.nodes["Principled BSDF"]
-        b.inputs["Base Color"].default_value = (*c, 1)
+        b.inputs["Base Color"].default_value = (*np.clip(base * np.array(k), 0, 1), 1)
         b.inputs["Roughness"].default_value = r
     c0 = HEAD_C + np.array([0.0, 0.003, 0.003])
     R = HEAD_R * np.array([1.095, 1.075, 1.045])
@@ -499,17 +594,20 @@ def build_hair(arm, seed=4):
         nrm /= np.linalg.norm(nrm)
         return c0 + d + nrm * lift, nrm
 
+    def bald(theta, phi):
+        return style == "receding" and abs(_wrap(phi)) < 1.05 and theta < 0.66
+
     # scalp shell under the strands (so no skin shows through)
     bm = bmesh.new()
     bmesh.ops.create_icosphere(bm, subdivisions=5, radius=1.0)
-    keep_geo = []
+    drop = []
     for f in bm.faces:
         c = f.calc_center_median()
         theta = math.acos(max(-1, min(1, c.z)))
         phi = math.atan2(c.x, -c.y)
-        if theta > _hair_end_theta(phi) - 0.04:
-            keep_geo.append(f)
-    bmesh.ops.delete(bm, geom=keep_geo, context="FACES")
+        if theta > _hair_end_theta(phi, style) - 0.04 or bald(theta + 0.06, phi):
+            drop.append(f)
+    bmesh.ops.delete(bm, geom=drop, context="FACES")
     for v in bm.verts:
         d = v.co.copy()
         v.co = Vector(c0 + np.array([d.x * HEAD_R[0] * 1.045, d.y * HEAD_R[1] * 1.035, d.z * HEAD_R[2] * 1.025]))
@@ -517,59 +615,85 @@ def build_hair(arm, seed=4):
     cap.data.materials.append(cols[2])
     _rigid(cap, arm, "Head")
 
+    n_strands, (lift_lo, lift_hi) = HAIR_STYLES.get(style, HAIR_STYLES["short"])
+    tied = {"ponytail": 1.92, "bun": 1.22}.get(style)        # strands are pulled back to a tie at this theta
     bm = bmesh.new()
-    n_strands = 330
     for i in range(n_strands):
         phi0 = rng.uniform(-math.pi, math.pi)
-        layer = rng.random()
-        theta0 = rng.uniform(0.0, 0.55) if layer < 0.62 else rng.uniform(0.45, 0.95)
-        sweep = (0.55 if phi0 > -0.15 else -0.35) if abs(phi0) < 1.2 else rng.normal(0, 0.15)   # side parting
-        phi_end = phi0 + sweep * rng.uniform(0.5, 1.2) + rng.normal(0, 0.12)
-        th_end = _hair_end_theta(phi_end) + rng.uniform(-0.05, 0.10)
+        theta0 = rng.uniform(0.0, 0.55) if rng.random() < 0.62 else rng.uniform(0.45, 0.95)
+        if bald(theta0, phi0):
+            continue
+        a0 = abs(_wrap(phi0))
+        if tied:
+            phi_end = phi0 + _wrap(math.pi - phi0) * rng.uniform(0.82, 0.95)
+            th_end = tied + rng.uniform(-0.06, 0.04)
+        else:
+            if style == "long":
+                sweep = (0.45 if phi0 > 0 else -0.45) if a0 < 1.2 else rng.normal(0, 0.1)   # centre parting
+            else:
+                sweep = (0.55 if phi0 > -0.15 else -0.35) if a0 < 1.2 else rng.normal(0, 0.15)  # side parting
+            if style == "messy":
+                sweep += rng.normal(0, 0.45)
+            phi_end = phi0 + sweep * rng.uniform(0.5, 1.2) + rng.normal(0, 0.12)
+            th_end = _hair_end_theta(phi_end, style) + rng.uniform(-0.05, 0.10)
         if th_end <= theta0 + 0.2:
             continue
-        r0 = rng.uniform(0.0036, 0.0058)
-        lift0 = rng.uniform(0.0015, 0.0075)
+        r0 = rng.uniform(0.0030, 0.0046) if style in ("cropped", "receding") else rng.uniform(0.0036, 0.0058)
+        lift0 = rng.uniform(lift_lo, lift_hi)
+        bump = 0.0035 if not tied else 0.0012
         samples = 9
         centers, normals = [], []
         for k in range(samples):
             t = k / (samples - 1)
             th = theta0 + (th_end - theta0) * t ** 0.9
             ph = phi0 + (phi_end - phi0) * t ** 1.2
-            lift = lift0 + 0.0035 * math.sin(math.pi * min(1.0, t * 1.1)) + 0.002 * t
+            lift = lift0 + bump * math.sin(math.pi * min(1.0, t * 1.1)) + 0.002 * t
             p, nr = surf(th, ph, lift)
             centers.append(p)
             normals.append(nr)
-        ring_verts = []
-        for k in range(samples):
-            t = k / (samples - 1)
-            tangent = (centers[min(k + 1, samples - 1)] - centers[max(k - 1, 0)])
-            tangent /= np.linalg.norm(tangent) + 1e-9
-            nrm = normals[k]
-            side = np.cross(tangent, nrm)
-            side /= np.linalg.norm(side) + 1e-9
-            rad = r0 * (1.0 - 0.9 * t ** 1.25)
-            ring = []
-            for a in range(5):
-                ang = 2 * math.pi * a / 5
-                pos = centers[k] + rad * (math.cos(ang) * nrm * 0.65 + math.sin(ang) * side)
-                ring.append(bm.verts.new(Vector(pos)))
-            ring_verts.append(ring)
-        mat_i = int(rng.integers(0, 3))
-        try:
-            bm.faces.new(ring_verts[0]).material_index = mat_i
-        except ValueError:
-            pass
-        for k in range(samples - 1):
-            for a in range(5):
-                f = bm.faces.new((ring_verts[k][a], ring_verts[k][(a + 1) % 5],
-                                  ring_verts[k + 1][(a + 1) % 5], ring_verts[k + 1][a]))
-                f.material_index = mat_i
-                f.smooth = True
-        try:
-            bm.faces.new(ring_verts[-1]).material_index = mat_i
-        except ValueError:
-            pass
+        if style == "long" and abs(_wrap(phi_end)) > 1.15:
+            # long hair keeps falling past the hairline to the shoulders, drifting a little outward
+            pe, ne = centers[-1], normals[-1]
+            out = np.array([ne[0], ne[1], 0.0])
+            out /= np.linalg.norm(out) + 1e-9
+            fall = pe[2] - rng.uniform(1.47, 1.53)
+            sway = rng.normal(0, 0.006)
+            for k in range(1, 7):
+                t = k / 6
+                p = pe + out * (0.010 * t + 0.016 * t * t) + np.array([sway * t, 0.0, -fall * t])
+                centers.append(p)
+                normals.append(out)
+        _tube(bm, centers, normals, r0, int(rng.integers(0, 3)), taper=0.9 if style != "long" else 0.75)
+
+    if tied:
+        tie, tie_n = surf(tied, math.pi, 0.008)
+        if style == "ponytail":
+            # the tail: a bunch of strands from the tie, out and down behind the neck
+            for i in range(80):
+                off = rng.normal(0, 0.006, 3)
+                length = rng.uniform(0.18, 0.24)
+                centers, normals = [], []
+                for k in range(8):
+                    t = k / 7
+                    p = tie + off * (1 + 1.5 * t) + np.array([0.0, 0.028 * math.sin(t * 2.2), -length * t ** 1.15])
+                    centers.append(p)
+                    normals.append(np.array([0.0, 1.0, 0.0]))
+                _tube(bm, centers, normals, rng.uniform(0.0035, 0.0055), int(rng.integers(0, 3)), taper=0.8)
+        else:
+            # the bun: a ball of hair wound on the back of the crown
+            bc = tie + tie_n * 0.026
+            for i in range(40):
+                u = rng.normal(0, 1, 3)
+                u /= np.linalg.norm(u)
+                w = np.cross(u, rng.normal(0, 1, 3))
+                w /= np.linalg.norm(w)
+                centers, normals = [], []
+                for k in range(9):
+                    ang = k / 8 * math.pi * 1.4
+                    d = u * math.cos(ang) + w * math.sin(ang)
+                    centers.append(bc + d * np.array([0.034, 0.028, 0.032]))
+                    normals.append(d)
+                _tube(bm, centers, normals, 0.007, int(rng.integers(0, 3)), taper=0.3)
     bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
     mesh = bpy.data.meshes.new("HairStrands")
     bm.to_mesh(mesh)
@@ -580,17 +704,37 @@ def build_hair(arm, seed=4):
     for m in cols:
         o.data.materials.append(m)
     _rigid(o, arm, "Head")
+    if tied:
+        band = bmesh.new()                                   # the hair tie
+        bmesh.ops.create_cone(band, cap_ends=True, segments=12, radius1=0.012, radius2=0.012, depth=0.010)
+        tm = _mesh_from_bm("HairTie", band)
+        t_obj = _link("HairTie", tm)
+        tie_mat = bpy.data.materials.new("Scrunchie")
+        tie_mat.use_nodes = True
+        tie_mat.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.05, 0.05, 0.06, 1)
+        t_obj.data.materials.append(tie_mat)
+        t_obj.location = Vector(tie + tie_n * 0.004)
+        t_obj.rotation_euler = Vector((0, 0, 1)).rotation_difference(Vector(tie_n)).to_euler()
+        bpy.context.view_layer.update()
+        t_obj.data.transform(t_obj.matrix_world)
+        t_obj.matrix_world = Matrix()
+        _rigid(t_obj, arm, "Head")
     return o
 
 
 # ----------------------------------------------------------------------------- entry point
-def build(arm):
-    """Build the whole head; returns the eyeball centres so the rig can be aligned with them."""
+def build(arm, face=None, hair=None):
+    """Build the whole head from a people.py profile's face and hair tables; returns the eyeball centres
+    so the rig can be aligned with them."""
+    global SKIN_SRGB
+    FACE.clear()
+    FACE.update(face or {})
+    SKIN_SRGB = hex01(FACE.get("skin", "#E2AE8B"))
     skin_img = make_image("FaceSkin", paint_skin(1024))
     eye_img = make_image("EyeTex", paint_eye(512))
     head, rim_y = build_head(arm, skin_img)
     centres = build_eyes(arm, rim_y + 0.0100, eye_img)
     build_lashes(arm, head, centres)
     build_ears(arm, skin_img)
-    build_hair(arm)
+    build_hair(arm, hair or {})
     return centres

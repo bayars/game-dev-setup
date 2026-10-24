@@ -1,10 +1,13 @@
 class_name Player
 extends CharacterBody3D
 ## The walker: WASD/arrows relative to the camera (Shift runs), mouse orbits the camera.
-## The person model swings its joints (ArmL/ArmR/LegL/LegR/Head) for a procedural walk cycle.
+## The person model is a rigged glTF with animations: idle, walk, run (all looping) and open_door.
+## Walk/run playback speed follows the real movement speed so the feet do not slide.
 
-const WALK_SPEED := 3.2
-const RUN_SPEED := 5.6
+const WALK_SPEED := 2.4
+const RUN_SPEED := 4.6
+const WALK_NATURAL := 1.75   # m/s one pass of the walk clip covers at speed_scale 1
+const RUN_NATURAL := 4.6
 const ACCEL := 14.0
 const GRAVITY := 20.0
 const MOUSE_SENS := 0.003
@@ -14,12 +17,29 @@ var move_input := Vector2.ZERO
 var run := false
 var frozen := false
 var cam_yaw := 0.0
+var cam_distance := 4.4:          # follow-camera distance; the title portrait uses a close value
+	set(v):
+		cam_distance = v
+		if _arm:
+			_arm.spring_length = v
+var cam_fov := 62.0:
+	set(v):
+		cam_fov = v
+		if _camera:
+			_camera.fov = v
+var cam_focus := 1.5              # height of the point the camera looks at
+var cam_pitch := -0.22:           # radians, negative looks down on the player
+	set(v):
+		cam_pitch = v
+		if _arm:
+			_arm.rotation.x = v
 
 var model: Node3D
-var _limbs := {}
-var _cycle := 0.0
+var _anim: AnimationPlayer
+var _action := false     # a one-shot action (open_door) is playing
 var _rig: Node3D
 var _arm: SpringArm3D
+var _camera: Camera3D
 
 func setup(model_scene: PackedScene) -> void:
 	var shape := CollisionShape3D.new()
@@ -33,23 +53,24 @@ func setup(model_scene: PackedScene) -> void:
 	model = model_scene.instantiate()
 	model.rotation.y = PI  # the model faces +Z; start facing the house (-Z)
 	add_child(model)
-	for joint in ["ArmL", "ArmR", "LegL", "LegR", "Head"]:
-		_limbs[joint] = model.find_child(joint, true, false)
+	_anim = model.find_child("AnimationPlayer", true, false)
+	if _anim:
+		_anim.play("idle")
 
 	_rig = Node3D.new()
 	_rig.top_level = true
 	add_child(_rig)
 	_arm = SpringArm3D.new()
-	_arm.spring_length = 4.4
+	_arm.spring_length = cam_distance
 	_arm.margin = 0.35
-	_arm.rotation.x = -0.22
+	_arm.rotation.x = cam_pitch
 	_arm.add_excluded_object(get_rid())
 	_rig.add_child(_arm)
-	var camera := Camera3D.new()
-	camera.fov = 62.0
-	camera.current = true
-	_arm.add_child(camera)
-	_rig.global_position = global_position + Vector3(0, 1.5, 0)
+	_camera = Camera3D.new()
+	_camera.fov = cam_fov
+	_camera.current = true
+	_arm.add_child(_camera)
+	_rig.global_position = global_position + Vector3(0, cam_focus, 0)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -88,7 +109,7 @@ func _physics_process(delta: float) -> void:
 
 func _process(delta: float) -> void:
 	_rig.rotation.y = cam_yaw
-	var goal := global_position + Vector3(0, 1.5, 0)
+	var goal := global_position + Vector3(0, cam_focus, 0)
 	_rig.global_position = _rig.global_position.lerp(goal, 1.0 - exp(-12.0 * delta))
 
 func face_toward(target: Vector3, seconds: float = 0.4) -> void:
@@ -96,21 +117,34 @@ func face_toward(target: Vector3, seconds: float = 0.4) -> void:
 	var tween := create_tween()
 	tween.tween_property(model, "rotation:y", atan2(d.x, d.z), seconds)
 
-func _animate(delta: float) -> void:
-	var planar := Vector2(velocity.x, velocity.z).length()
-	var amp := clampf(planar / WALK_SPEED, 0.0, 1.6)
-	_cycle += planar * delta * 2.3
-	var swing := sin(_cycle) * 0.75 * amp
-	_set_rot("LegL", swing)
-	_set_rot("LegR", -swing)
-	_set_rot("ArmL", -swing * 0.8)
-	_set_rot("ArmR", swing * 0.8)
-	var head: Node3D = _limbs["Head"]
-	if head:
-		head.rotation.x = sin(_cycle * 2.0) * 0.03 * amp
-	model.position.y = absf(sin(_cycle)) * 0.045 * amp
+func has_animation(clip: String) -> bool:
+	return _anim != null and _anim.has_animation(clip)
 
-func _set_rot(joint: String, angle: float) -> void:
-	var node: Node3D = _limbs[joint]
-	if node:
-		node.rotation.x = lerpf(node.rotation.x, angle, 0.5)
+## Plays a one-shot clip (e.g. "open_door") and returns its length in seconds.
+func play_action(clip: String) -> float:
+	if not has_animation(clip):
+		return 0.0
+	_action = true
+	_anim.speed_scale = 1.0
+	_anim.play(clip, 0.25)
+	return _anim.get_animation(clip).length
+
+func end_action() -> void:
+	_action = false
+
+func _animate(_delta: float) -> void:
+	if _anim == null or _action:
+		return
+	var planar := Vector2(velocity.x, velocity.z).length()
+	var clip := "idle"
+	var scale := 1.0
+	if planar > 0.15:
+		if run or Input.is_physical_key_pressed(KEY_SHIFT):
+			clip = "run"
+			scale = planar / RUN_NATURAL
+		else:
+			clip = "walk"
+			scale = planar / WALK_NATURAL
+	if _anim.current_animation != clip:
+		_anim.play(clip, 0.25)
+	_anim.speed_scale = clampf(scale, 0.3, 2.0)

@@ -25,6 +25,7 @@ var interior_light: OmniLight3D
 var door_open_angle := deg_to_rad(105.0)
 
 var _dim: ColorRect
+var _portrait_light: DirectionalLight3D
 var _title: Label
 var _sub: Label
 var _story: Label
@@ -267,17 +268,17 @@ func _build_ui() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	_dim = ColorRect.new()
-	_dim.color = Color(0.02, 0.02, 0.07, 0.5)
+	_dim.color = Color(0.02, 0.02, 0.07, 0.18)
 	_dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_dim)
 
-	_title = _label(88, Color(1.0, 0.9, 0.72), HORIZONTAL_ALIGNMENT_CENTER, VERTICAL_ALIGNMENT_CENTER)
-	_title.offset_bottom = -70.0
+	_title = _label(88, Color(1.0, 0.9, 0.72), HORIZONTAL_ALIGNMENT_CENTER, VERTICAL_ALIGNMENT_TOP)
+	_title.offset_top = 36.0
 	_title.text = "THE WALK HOME"
 	layer.add_child(_title)
-	_sub = _label(28, Color(0.95, 0.95, 1.0), HORIZONTAL_ALIGNMENT_CENTER, VERTICAL_ALIGNMENT_CENTER)
-	_sub.offset_top = 120.0
+	_sub = _label(28, Color(0.95, 0.95, 1.0), HORIZONTAL_ALIGNMENT_CENTER, VERTICAL_ALIGNMENT_BOTTOM)
+	_sub.offset_bottom = -48.0
 	_sub.text = "Press Space to begin"
 	layer.add_child(_sub)
 
@@ -313,18 +314,38 @@ func _say(text: String, hold: float) -> void:
 func _show_title() -> void:
 	phase = Phase.TITLE
 	player.frozen = true
+	player.cam_yaw = PI            # camera in front of the walker for a close portrait
+	player.cam_fov = 26.0          # long lens: flattering, keeps the head in proportion
+	player.cam_distance = 1.75
+	player.cam_pitch = -0.02
+	player.cam_focus = 1.60
+	if _portrait_light == null:      # soft warm light from the camera side, only for the title portrait
+		_portrait_light = DirectionalLight3D.new()
+		_portrait_light.light_color = Color(1.0, 0.86, 0.72)
+		_portrait_light.light_energy = 1.0
+		_portrait_light.rotation_degrees = Vector3(-12, 200, 0)
+		_portrait_light.shadow_enabled = false
+		add_child(_portrait_light)
 
 func _begin() -> void:
 	phase = Phase.WALK
-	player.frozen = false
 	_fade(_title, 0.0, 0.8)
 	_fade(_sub, 0.0, 0.8)
-	var t := create_tween().set_parallel(true)
-	t.tween_property(_dim, "color:a", 0.0, 1.2)
-	t.tween_property(player, "cam_yaw", 0.0, 1.0)
+	# the camera swings from the portrait in front of the walker to the follow position behind
+	var t := create_tween().set_parallel(true).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	t.tween_property(_dim, "color:a", 0.0, 1.4)
+	t.tween_property(player, "cam_yaw", 0.0, 1.8)
+	t.tween_property(player, "cam_distance", 4.4, 1.8)
+	t.tween_property(player, "cam_pitch", -0.22, 1.8)
+	t.tween_property(player, "cam_focus", 1.5, 1.8)
+	t.tween_property(player, "cam_fov", 62.0, 1.8)
+	if _portrait_light:
+		t.tween_property(_portrait_light, "light_energy", 0.0, 1.8)
 	if not _autoplay and DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_intro()
+	await t.finished
+	player.frozen = false
 
 func _intro() -> void:
 	await get_tree().create_timer(0.8).timeout
@@ -356,10 +377,12 @@ func _open_door() -> void:
 	player.move_input = Vector2.ZERO
 	player.face_toward(HOUSE_POS + Vector3(0, 0, 3.0))
 	_fade(_hint, 0.0, 0.2)
-	var t := create_tween().set_parallel(true)
-	t.tween_property(door_hinge, "rotation:y", door_open_angle, 1.8).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	t.tween_property(interior_light, "light_energy", 2.2, 1.8)
+	player.play_action("open_door")
+	var t := create_tween().set_parallel(true)   # the door starts moving once the hand is on the knob
+	t.tween_property(door_hinge, "rotation:y", door_open_angle, 1.8).set_delay(0.55).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	t.tween_property(interior_light, "light_energy", 2.2, 1.8).set_delay(0.55)
 	await t.finished
+	player.end_action()
 	await _say("Welcome home.", 2.2)
 	_end()
 
@@ -399,7 +422,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	_time += delta
 	if phase == Phase.TITLE:
-		player.cam_yaw = sin(_time * 0.25) * 0.4   # slow sway behind the title
+		player.cam_yaw = PI + sin(_time * 0.35) * 0.22   # slow sway around the portrait
 	if _autoplay:
 		_autoplay_step(delta)
 
@@ -426,6 +449,10 @@ func _autoplay_step(delta: float) -> void:
 
 func _check_result() -> void:
 	var p := player.global_position
+	for clip in ["idle", "walk", "run", "open_door"]:
+		if not player.has_animation(clip):
+			_fail("missing animation " + clip)
+			return
 	if door_hinge == null or door_hinge.rotation.y < deg_to_rad(95.0):
 		_fail("door did not open")
 	elif p.y < -0.2 or p.z > -13.5 or p.z < -15.0 or absf(p.x) > 1.5:

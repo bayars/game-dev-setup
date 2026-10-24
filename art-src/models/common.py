@@ -206,9 +206,14 @@ def preview(png_path, direction=(-0.7, -1.0, 0.55), size=640, margin=1.25):
     bpy.ops.render.render(write_still=True)
 
 
-def finish(path, **preview_kwargs):
+def export_glb(path, **extra):
+    """glTF export for Godot (meshes, materials, skeleton and every action that has a fake user)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", export_apply=True, export_yup=True,
-                              export_cameras=False, export_lights=False)
+                              export_cameras=False, export_lights=False, **extra)
     print("EXPORTED", path)
+
+
+def finish(path, **preview_kwargs):
+    export_glb(path)
     preview(path[:-4] + "_preview.png", **preview_kwargs)

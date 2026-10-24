@@ -44,7 +44,7 @@ PANTS = mat("Pants", CLOTHES["pants"], roughness=0.85)
 SHOE = mat("Shoe", CLOTHES["shoe_colour"], roughness=0.5)
 SOLE = mat("Sole", "#ECE7DC" if CLOTHES["shoes"] != "boots" else "#2A2522", roughness=0.8)
 FRAME = mat("Frames", "#2A2420" if "glasses" in EXTRAS else "#000000", metallic=0.3, roughness=0.35)
-LENS = mat("Lens", "#DDE6EE", roughness=0.05)
+
 LACE = mat("Lace", "#F5F2EA", roughness=0.7)
 HAIR = mat("Hair", "#2A160B", roughness=0.45)
 SCARF = mat("Scarf", "#E8A31F", roughness=0.9)
@@ -384,8 +384,6 @@ elif TOP == "cardigan":
     chest_parts += [torus("Neckband", .074, .015, (0, .004, 1.495), INNER, scale=(1.08, .95, .7)),
                     on_front("Placket", (.06, .006, .44), 0, 1.20, INNER, bevel=.002)]
     chest_parts += buttons(.034, 1.02, 1.38, 5, JACKET_DK)
-    for sx in (1, -1):
-        chest_parts.append(on_front("Pocket", (.085, .012, .09), sx * .1, 1.03, JACKET_DK, bevel=.008))
 if "scarf" in EXTRAS:
     chest_parts += [
         torus("ScarfWrap1", .082, .026, (0, 0, 1.545), SCARF, scale=(1.0, .95, .85)),
@@ -454,8 +452,6 @@ if "glasses" in EXTRAS:
         sx = 1 if suf == "L" else -1
         gl.append(torus("Rim", .0175, .0016, (c.x, c.y - .02, c.z - .002), FRAME, rot=(math.pi / 2, 0, 0),
                         scale=(1.1, 1.0, .85), mseg=24, nseg=6))
-        gl.append(cyl("Glass", .0168, .0012, Vector((c.x, c.y - .02, c.z - .002)), LENS, verts=20,
-                      rot=(math.pi / 2, 0, 0)))
         gl.append(box("Temple", (.002, .092, .003), Vector((sx * .071, c.y + .026, c.z + .002)), FRAME,
                       rot=(0, 0, -sx * .1)))
     c = eye_centres["L"]
@@ -889,7 +885,7 @@ def phone(t):
     for suf in ("L", "R"):
         p.rot[f"UpperArm_{suf}"] = (0.0, 0.0, 0.0)
         p.rot[f"Forearm_{suf}"] = (0.0, 0.0, 0.0)
-        arms_out(p, suf, .32, .3, 1.6, hand=-.1 - .05 * tap)
+        arms_out(p, suf, .12, .55, 2.0, hand=.25 - .05 * tap)
     return p
 
 

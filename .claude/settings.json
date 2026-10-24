@@ -29,5 +29,8 @@
       "Bash(git push --force:*)",
       "Bash(git push -f:*)"
     ]
+  },
+  "enabledPlugins": {
+    "godot@awesome-gamedev-agent-skills": true
   }
 }

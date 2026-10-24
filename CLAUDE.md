@@ -56,6 +56,12 @@ A person walks up a path at dusk to a house and opens the door (WASD, mouse look
 - Headless check: `godot --headless --path godot-3d -- --selftest` plays the whole story fast and prints `SELFTEST_OK`. `-- --autoplay` plays it at normal speed; `--start-z=-2` spawns near the house (quick screenshots, see the xvfb recipe above).
 - Pitfall: point lights placed within ~1 m of a wall blow it out to white; keep them away or use emissive materials.
 
+## Game 3: Off the Books (18+ isometric 3D story, `godot-house/`)
+
+Two undocumented handyman brothers (Nico, Tomas) renovate a family home; on day 2 an accident kills Daniel, and they must stage it before the four other residents find him. Full story, systems, endings and milestones: `docs/game3-design.md`. Concealment and investigation are game-defined rules only (tokens, timelines, witness memory), never real forensic techniques.
+- Milestone 1 (greybox) done: house ground floor built in code (`scripts/house.gd`, rooms/walls/props tables, navmesh baked one physics frame after build, cell size 0.1 to match `[navigation]` in project.godot), isometric camera (`iso_camera.gd`: narrow FOV, 45 degree yaw, Q/E rotate, wheel zoom), wall cutaway (`shaders/wall.gdshader`, per-instance `cut`), actors with click/WASD/navigation (`actor.gd`; people collide only with the house, layer 2 / mask 1), residents on schedules (`npc.gd`), Tab switches brother, right click sends the other one, F follow/stay. Rendering reuses `graphics.gd` and textures from Walk Home.
+- Headless check: `godot --headless --path godot-house -- --selftest` prints `SELFTEST_OK`. Watch it: `DISPLAY=:0 godot --path godot-house --rendering-driver vulkan --write-movie out.png --fixed-fps 10 --quit-after 400 -- --selftest --quality=high`.
+
 ## Releases
 
 `scripts/release.sh <project_dir> <version>` (e.g. `godot-3d 0.1.0`) builds Linux and Windows on the server and copies the zips to `releases/<name>-<version>-<platform>.zip`, stored in Git LFS (`releases/*.zip`). Commit them from the laptop. The server checkout excludes `releases/*` from LFS fetches. Windows builds are only checked structurally (PE header); they cannot be run on this machine.

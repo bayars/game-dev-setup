@@ -39,6 +39,8 @@ var _tool: Node3D
 var _tool_id := ""
 var _tools_src: Node
 var _fresh := 0                # physics frames since go_to; the agent needs a frame to compute a path
+var _post: Variant = null      # take_post: a working spot to step to while busy
+var _post_look := Vector3.ZERO
 
 func setup(model_scene: PackedScene, who: String, jacket: Color, pants: Color, gfx: Graphics) -> void:
 	display_name = who
@@ -142,6 +144,12 @@ func go_to(p: Vector3) -> void:
 	_going = true
 	_fresh = 0
 
+## While busy: walk straight to a nearby working spot and face `look` there (pair jobs keep apart).
+func take_post(p: Vector3, look: Vector3) -> void:
+	_post = p
+	_post_look = look
+	_going = false
+
 func stop() -> void:
 	_going = false
 
@@ -185,7 +193,14 @@ func _tint(jacket: Color, pants: Color) -> void:
 func _physics_process(delta: float) -> void:
 	var dir := Vector3.ZERO
 	if busy:
-		pass
+		if _post != null:             # step over to the assigned working spot, then face the work
+			var to_post: Vector3 = _post - global_position
+			to_post.y = 0.0
+			if to_post.length() > 0.06:
+				dir = to_post.normalized() * minf(1.0, to_post.length() * 2.5)
+			else:
+				_post = null
+				face(_post_look)
 	elif lead != null:
 		var spot := lead.global_position - lead.forward() * lead_gap
 		var to_spot := spot - global_position

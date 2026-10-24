@@ -346,14 +346,34 @@ func start_job(job: Job) -> void:
 			_dialogue.bark(current.display_name, "%s, I need you to hold this." % helper.display_name, 2.0)
 			return
 		helper.busy = true
-		helper.face(job.station + Vector3(1, 0, 0))
 	if _auto_job == job:
 		_stop_auto()
 	current.busy = true
 	current.stop()
+	if helper:
+		_take_pair_posts(job, helper)
 	_rings[job.id].visible = false
 	install.start(job, current, helper, site, cam)
 	_show_hint_once("install")
+
+## Two-person jobs: the worker stands at the station, the helper 1.2 m to the side along the work
+## (on whichever side he already is), both facing it, so they never overlap in the close-up.
+func _take_pair_posts(job: Job, helper: Actor) -> void:
+	var work := Vector3.ZERO
+	var n := 0
+	for s in job.steps.size():
+		for p in site.spots(job.id, s):
+			work += p
+			n += 1
+	work = work / maxf(1.0, n)
+	var to_work := Vector3(work.x - job.station.x, 0, work.z - job.station.z).normalized()
+	var side := Vector3(-to_work.z, 0, to_work.x)
+	if side.dot(helper.global_position - job.station) < 0.0:
+		side = -side
+	var floor_y := job.station.y + Worksite.FLOOR
+	current.take_post(Vector3(job.station.x, floor_y, job.station.z), work)
+	var spot := job.station + side * 1.2
+	helper.take_post(Vector3(spot.x, floor_y, spot.z), work + side * 1.2)
 
 func _on_install_finished(job: Job) -> void:
 	_release_install(job)

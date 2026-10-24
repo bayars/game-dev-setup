@@ -85,7 +85,7 @@ box("Mud", (0.12, 0.006, 0.025), (0, -0.004, 0.13), MUD, r, bevel=0.003)
 
 r = item("mud")
 cone("Bucket", 0.12, 0.14, 0.24, (0, 0, 0.12), WHITE, r, verts=28)
-cyl("Compound", 0.135, 0.01, (0, 0, 0.235), MUD, r, verts=28)
+cyl("Compound", 0.128, 0.012, (0, 0, 0.238), MUD, r, verts=28)   # sits proud of the rim: the cap read as a dark hole
 torus("Bail", 0.13, 0.005, (0, 0, 0.24), STEEL, r, rot=(math.pi / 2, 0, 0), mseg=24, nseg=6)
 
 r = item("mallet")

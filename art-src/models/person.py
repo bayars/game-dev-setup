@@ -20,6 +20,9 @@ from mathutils import Euler, Matrix, Vector
 import common
 from common import *
 
+# "walker" (Walk Home: scarf and backpack) or "worker" (Off the Books: tool belt, no backpack); set by worker.py
+VARIANT = os.environ.get("PERSON_VARIANT", "walker")
+
 reset()
 scene = bpy.context.scene
 scene.render.fps = 30
@@ -291,36 +294,51 @@ bpy.ops.object.mode_set(mode="OBJECT")
 # collar, scarf (two wraps, knot, tail), zipper, pockets, hem, cuffs: rigid on Chest/Hips/forearms
 chest_parts = [
     torus("Collar", .078, .02, (0, .005, 1.505), JACKET_DK, scale=(1.05, .95, .65)),
-    torus("ScarfWrap1", .082, .026, (0, 0, 1.545), SCARF, scale=(1.0, .95, .85)),
-    torus("ScarfWrap2", .088, .024, (0, -.004, 1.51), SCARF_DK, rot=(.18, 0, 0), scale=(1.0, .95, .85)),
-    sphere("ScarfKnot", .036, Vector((.05, -.088, 1.505)), SCARF, scale=(1.0, .8, 1.0)),
-    box("ScarfTail", (.075, .016, .3), Vector((.058, -.108, 1.345)), SCARF, bevel=.006, rot=(.06, 0, -.07)),
-    box("ScarfTailStripe", (.075, .018, .03), Vector((.058, -.108, 1.23)), SCARF_DK, bevel=.004, rot=(.06, 0, -.07)),
-    box("ScarfTail2", (.07, .016, .22), Vector((.025, -.104, 1.395)), SCARF, bevel=.006, rot=(.1, 0, .12)),
     box("Zipper", (.012, .006, .36), Vector((0, -.123, 1.245)), ZIP, bevel=.002),
     box("ZipPull", (.018, .008, .03), Vector((0, -.127, 1.425)), ZIP, bevel=.003),
     box("PocketL", (.075, .014, .085), Vector((.09, -.106, 1.06)), JACKET_DK, bevel=.006, rot=(.1, 0, .12)),
     box("PocketR", (.075, .014, .085), Vector((-.09, -.106, 1.06)), JACKET_DK, bevel=.006, rot=(.1, 0, -.12)),
     box("PocketFlapL", (.08, .016, .022), Vector((.09, -.108, 1.1)), JACKET_DK, bevel=.005, rot=(.1, 0, .12)),
     box("PocketFlapR", (.08, .016, .022), Vector((-.09, -.108, 1.1)), JACKET_DK, bevel=.005, rot=(.1, 0, -.12)),
-    # backpack and straps
-    box("Backpack", (.31, .15, .40), Vector((0, .18, 1.24)), PACK, bevel=.05),
-    box("PackFlap", (.31, .16, .12), Vector((0, .185, 1.4)), STRAP, bevel=.04),
-    box("PackPocket", (.22, .05, .17), Vector((0, .27, 1.17)), PACK, bevel=.03),
-    box("PackBuckle", (.03, .012, .04), Vector((0, .27, 1.31)), ZIP, bevel=.003),
-    box("PackRoll", (.3, .07, .07), Vector((0, .175, 1.05)), STRAP, bevel=.03),
 ]
-for sx in (1, -1):
+if VARIANT == "walker":
     chest_parts += [
-        box("StrapTop", (.045, .22, .012), Vector((sx * .105, .005, 1.50)), STRAP, bevel=.003, rot=(.0, 0, 0)),
-        box("StrapFront", (.045, .012, .3), Vector((sx * .105, -.112, 1.35)), STRAP, bevel=.003),
-        box("StrapBack", (.045, .012, .26), Vector((sx * .105, .108, 1.36)), STRAP, bevel=.003),
-        box("StrapLow", (.045, .02, .1), Vector((sx * .105, .128, 1.215)), STRAP, bevel=.003),
+        torus("ScarfWrap1", .082, .026, (0, 0, 1.545), SCARF, scale=(1.0, .95, .85)),
+        torus("ScarfWrap2", .088, .024, (0, -.004, 1.51), SCARF_DK, rot=(.18, 0, 0), scale=(1.0, .95, .85)),
+        sphere("ScarfKnot", .036, Vector((.05, -.088, 1.505)), SCARF, scale=(1.0, .8, 1.0)),
+        box("ScarfTail", (.075, .016, .3), Vector((.058, -.108, 1.345)), SCARF, bevel=.006, rot=(.06, 0, -.07)),
+        box("ScarfTailStripe", (.075, .018, .03), Vector((.058, -.108, 1.23)), SCARF_DK, bevel=.004, rot=(.06, 0, -.07)),
+        box("ScarfTail2", (.07, .016, .22), Vector((.025, -.104, 1.395)), SCARF, bevel=.006, rot=(.1, 0, .12)),
+        # backpack and straps
+        box("Backpack", (.31, .15, .40), Vector((0, .18, 1.24)), PACK, bevel=.05),
+        box("PackFlap", (.31, .16, .12), Vector((0, .185, 1.4)), STRAP, bevel=.04),
+        box("PackPocket", (.22, .05, .17), Vector((0, .27, 1.17)), PACK, bevel=.03),
+        box("PackBuckle", (.03, .012, .04), Vector((0, .27, 1.31)), ZIP, bevel=.003),
+        box("PackRoll", (.3, .07, .07), Vector((0, .175, 1.05)), STRAP, bevel=.03),
     ]
+    for sx in (1, -1):
+        chest_parts += [
+            box("StrapTop", (.045, .22, .012), Vector((sx * .105, .005, 1.50)), STRAP, bevel=.003, rot=(.0, 0, 0)),
+            box("StrapFront", (.045, .012, .3), Vector((sx * .105, -.112, 1.35)), STRAP, bevel=.003),
+            box("StrapBack", (.045, .012, .26), Vector((sx * .105, .108, 1.36)), STRAP, bevel=.003),
+            box("StrapLow", (.045, .02, .1), Vector((sx * .105, .128, 1.215)), STRAP, bevel=.003),
+        ]
 bind_rigid(chest_parts, "Chest", "Chest_parts")
 
-bind_rigid([torus("Hem", .162, .014, (0, 0, .935), JACKET_DK, scale=(1.0, .76, 1.0), mseg=48),
-            torus("Belt", .158, .012, (0, 0, .91), STRAP, scale=(1.0, .76, 1.0), mseg=48)], "Hips", "Hips_parts")
+hips_parts = [torus("Hem", .162, .014, (0, 0, .935), JACKET_DK, scale=(1.0, .76, 1.0), mseg=48),
+              torus("Belt", .158, .012, (0, 0, .91), STRAP, scale=(1.0, .76, 1.0), mseg=48)]
+if VARIANT == "worker":
+    # tool belt: wide leather belt, two rounded pouches on the hips, a tape measure clipped at the back
+    hips_parts += [torus("ToolBelt", .166, .022, (0, 0, .905), STRAP, scale=(1.0, .78, 1.6), mseg=48)]
+    for sx in (1, -1):
+        hips_parts += [
+            box("Pouch", (.06, .13, .15), Vector((sx * .175, -.02, .83)), PACK, bevel=.025, rot=(0, sx * .08, 0)),
+            box("PouchFlap", (.064, .135, .035), Vector((sx * .178, -.02, .9)), STRAP, bevel=.012),
+            cyl("PouchTool", .009, .1, Vector((sx * .18, -.06, .93)), ZIP, verts=8),
+        ]
+    hips_parts += [cyl("BeltTape", .032, .028, Vector((0, .135, .88)), mat("TapeCase", "#E2B21C", roughness=.4),
+                       rot=(math.pi / 2, 0, 0))]
+bind_rigid(hips_parts, "Hips", "Hips_parts")
 
 for sx, suf in ((1, "L"), (-1, "R")):
     w, d, tips = hand_tips[sx]
@@ -522,10 +540,175 @@ def open_door(t):
     return p
 
 
+# ---- work and carry clips (Off the Books). Arms: negative X swings forward/up; a right arm swings in
+# with +Z, a left arm with -Z. Child rotations add to the parent's (a knee bend is relative to the thigh).
+
+
+def arms_out(p, suf, fwd, inward, elbow, hand=0.0, spread=0.0):
+    side = 1.0 if suf == "L" else -1.0
+    p.r(f"UpperArm_{suf}", x=-fwd, y=side * ARM_IN * (1.0 - spread), z=-side * inward)
+    p.r(f"Forearm_{suf}", x=-elbow)
+    p.r(f"Hand_{suf}", x=hand)
+
+
+def carry(t):
+    """Walking with a heavy load held low in front with both hands (pair carry)."""
+    p = Pose()
+    phi = 2 * math.pi * t
+    gait(p, phi, swing=.42, flex=.6, arm_swing=0.0, arm_flex=0.0, lean=.1, bob=.025, yaw=.04, hip_roll=.04)
+    for suf in ("L", "R"):
+        p.rot[f"UpperArm_{suf}"] = (0.0, 0.0, 0.0)
+        p.rot[f"Forearm_{suf}"] = (0.0, 0.0, 0.0)
+        arms_out(p, suf, .55 + .03 * math.sin(2 * phi), .32, .95, hand=.15)
+        p.r(f"Clavicle_{suf}", y=.08 if suf == "L" else -.08)
+    p.r("Spine", x=-.05)
+    p.r("Chest", x=-.06)
+    blink(p, t, .3)
+    return p
+
+
+def drag(t):
+    """Pushing and dragging a heavy load alone: bent over, short heavy steps, arms reaching low."""
+    p = Pose()
+    phi = 2 * math.pi * t
+    gait(p, phi, swing=.3, flex=.55, arm_swing=0.0, arm_flex=0.0, lean=.55, bob=.02, yaw=.03, hip_roll=.05)
+    heave = .5 + .5 * math.sin(2 * phi)
+    for suf in ("L", "R"):
+        p.rot[f"UpperArm_{suf}"] = (0.0, 0.0, 0.0)
+        p.rot[f"Forearm_{suf}"] = (0.0, 0.0, 0.0)
+        arms_out(p, suf, .75 + .1 * heave, .22, .35 + .1 * heave, hand=.3)
+    p.r("UpperLeg_L", x=-.08)
+    p.r("UpperLeg_R", x=-.08)
+    p.r("LowerLeg_L", x=.16)
+    p.r("LowerLeg_R", x=.16)
+    p.l("Hips", z=-.05)
+    p.r("Head", x=-.25)
+    blink(p, t, .6)
+    return p
+
+
+def stance(p, t, crouch=0.0):
+    """Feet apart, knees a little bent, weight shifting slowly (base for standing work)."""
+    a = 2 * math.pi * t
+    p.r("UpperLeg_L", x=-.08 - crouch, z=.1)
+    p.r("UpperLeg_R", x=.06 - crouch, z=-.1)
+    p.r("LowerLeg_L", x=.14 + crouch * 2)
+    p.r("LowerLeg_R", x=.1 + crouch * 2)
+    p.r("Foot_L", x=-.06 - crouch)
+    p.r("Foot_R", x=-.16 - crouch)
+    p.l("Hips", x=.01 * math.sin(a), z=-.02 - crouch * .18)
+    p.r("Chest", x=.02 * math.sin(a))
+
+
+def hammer(t):
+    """Left hand steadies, right arm lifts the hammer and strikes at chest height."""
+    p = Pose()
+    stance(p, t)
+    up = smooth(t / .5) * (1.0 - smooth((t - .56) / .1))
+    hit = math.exp(-((t - .66) / .04) ** 2)
+    p.r("Spine", x=.1, z=-.06)
+    p.r("Chest", x=.06 + .03 * hit, z=-.08 + .05 * up)
+    p.r("Head", x=.08)
+    arms_out(p, "L", 1.15, .45, .7, hand=-.1)
+    arms_out(p, "R", .8 + .75 * up, .35 - .1 * up, .55 + 1.15 * up, hand=.35 * up - .2 * hit)
+    p.r("Clavicle_R", y=-.1 * up)
+    blink(p, t, .2)
+    return p
+
+
+def drill(t, low=False):
+    """Both hands on a drill or screwdriver held at chest height against a wall, pushing in pulses."""
+    p = Pose()
+    stance(p, t)
+    a = 2 * math.pi * t
+    push = .5 + .5 * math.sin(a * 2)
+    buzz = .012 * math.sin(a * 24)
+    p.r("Spine", x=.12 + .04 * push)
+    p.r("Chest", x=.05 + buzz, z=-.05)
+    p.r("Head", x=.04)
+    arms_out(p, "R", 1.25 + .08 * push, .42, .85 - .2 * push, hand=-.15 + buzz * 4)
+    arms_out(p, "L", 1.1 + .06 * push, .5, .95 - .15 * push, hand=-.1)
+    blink(p, t, .7)
+    return p
+
+
+def lift(t):
+    """Holding a big sheet up against the studs: arms raised in front, braced, a slow sway."""
+    p = Pose()
+    stance(p, t, crouch=.05)
+    a = 2 * math.pi * t
+    sway = math.sin(a)
+    p.r("Spine", x=-.04, z=.03 * sway)
+    p.r("Chest", x=-.06)
+    p.r("Neck", x=-.08)
+    p.r("Head", x=-.16)
+    arms_out(p, "L", 2.05 + .05 * sway, .25, .55, hand=.5, spread=.3)
+    arms_out(p, "R", 2.05 - .05 * sway, .25, .55, hand=.5, spread=.3)
+    blink(p, t, .45)
+    return p
+
+
+def kneel_base(p):
+    """One knee down: left foot planted in front, right knee on the floor."""
+    p.l("Hips", y=.06, z=-.47)
+    p.r("UpperLeg_L", x=-1.45, z=.06)
+    p.r("LowerLeg_L", x=1.5)
+    p.r("Foot_L", x=-.05)
+    p.r("UpperLeg_R", x=-.08, z=-.05)
+    p.r("LowerLeg_R", x=1.62)
+    p.r("Foot_R", x=.55)
+    p.r("Toes_R", x=-.6)
+
+
+def kneel(t):
+    """Kneeling floor work: the right hand taps (mallet on the planks), the left presses the floor."""
+    p = Pose()
+    kneel_base(p)
+    tap = abs(math.sin(2 * math.pi * t * 2))
+    p.r("Spine", x=.42)
+    p.r("Chest", x=.25)
+    p.r("Head", x=.12)
+    arms_out(p, "L", .55, .3, .25, hand=.2)
+    arms_out(p, "R", .55 + .35 * tap, .3, .55 + .4 * tap, hand=-.1)
+    blink(p, t, .5)
+    return p
+
+
+def wire(t):
+    """Kneeling at an outlet near the floor: both hands forward at low height, small twists."""
+    p = Pose()
+    kneel_base(p)
+    a = 2 * math.pi * t
+    twist = math.sin(a * 3)
+    p.r("Spine", x=.22)
+    p.r("Chest", x=.1)
+    p.r("Head", x=.12)
+    arms_out(p, "R", 1.05, .45, .7, hand=.12 * twist)
+    arms_out(p, "L", 1.0, .5, .8, hand=-.08)
+    p.r("Forearm_R", y=.25 * twist)
+    blink(p, t, .2)
+    return p
+
+
+def talk(t):
+    """Idle with the right hand gesturing and small nods."""
+    p = idle(t)
+    a = 2 * math.pi * t
+    g = smooth((math.sin(a * 2) + 1) / 2)
+    p.r("UpperArm_R", x=-.35 - .12 * g, z=.15)
+    p.r("Forearm_R", x=-.9 - .2 * g, y=-.3 * g)
+    p.r("Hand_R", x=.2, z=.2 * g)
+    p.r("Head", x=.05 * math.sin(a * 3), z=.04 * math.sin(a * 2))
+    return p
+
+
 act_idle = make_action("idle_loop", 90, idle, True)
 act_walk = make_action("walk_loop", 33, walk, True)
 act_run = make_action("run_loop", 21, run, True)
 act_door = make_action("open_door", 54, open_door, False)
+WORK_ACTIONS = [("carry", 36, carry), ("drag", 48, drag), ("hammer", 30, hammer), ("drill", 40, drill),
+                ("lift", 72, lift), ("kneel", 40, kneel), ("wire", 54, wire), ("talk", 90, talk)]
+work_acts = {n: make_action(n + "_loop", f, fn, True) for n, f, fn in WORK_ACTIONS}
 arm.animation_data.action = act_idle
 bpy.ops.object.mode_set(mode="OBJECT")
 
@@ -579,27 +762,42 @@ for o in scene.objects:
     if o.type == "ARMATURE":
         o.hide_render = True
 cam = setup_preview()
-pose_sheet(act_walk, [0, 4, 8, 12, 16, 20, 24, 28], "walk", (1.0, 0.0, 0.08))
-pose_sheet(act_run, [0, 3, 5, 8, 10, 13, 15, 18], "run", (1.0, 0.0, 0.08))
-pose_sheet(act_idle, [0, 12, 24, 36, 48, 60, 72, 84], "idle", (-0.5, -1.0, 0.2), (0, 0, 0.92))
-pose_sheet(act_door, [0, 6, 12, 18, 24, 32, 42, 53], "door", (-1.0, -0.8, 0.25), (-0.1, -0.1, 0.95))
-arm.animation_data.action = act_idle
-scene.frame_set(0)
-aim(cam, (-0.35, -1.0, 0.15), (0, 0, 0.9))
-cam.data.ortho_scale = 2.1
-scene.render.filepath = out[:-4] + "_preview.png"
-bpy.ops.render.render(write_still=True)
-# close-ups of the face: front, three-quarter, side, and mid-blink
-scene.render.resolution_x = scene.render.resolution_y = 512
-scene.cycles.samples = 110
-cam.data.ortho_scale = 0.30
-for name, direction in (("front", (0, -1, 0.02)), ("34", (-0.6, -1, 0.05)), ("side", (-1, -0.1, 0.0))):
-    aim(cam, direction, (0, -0.045, 1.675))
-    scene.render.filepath = os.path.join(os.path.dirname(out), f"person_face_{name}.png")
+if VARIANT == "worker":
+    prefix = os.path.basename(out)[:-4]
+    for n, frames, _fn in WORK_ACTIONS:
+        arm.animation_data.action = work_acts[n]
+        for i in range(8):
+            scene.frame_set(int(i * frames / 8))
+            aim(cam, (-1.0, -0.7, 0.25), (0, 0, .75))
+            scene.render.filepath = os.path.join(os.path.dirname(out), f"{prefix}_{n}_{i}.png")
+            bpy.ops.render.render(write_still=True)
+    arm.animation_data.action = act_idle
+    scene.frame_set(0)
+    aim(cam, (-0.35, -1.0, 0.15), (0, 0, 0.9))
+    scene.render.filepath = out[:-4] + "_preview.png"
     bpy.ops.render.render(write_still=True)
-arm.animation_data.action = act_idle
-scene.frame_set(56)
-aim(cam, (-0.25, -1, 0.05), (0, -0.045, 1.675))
-scene.render.filepath = os.path.join(os.path.dirname(out), "person_face_blink.png")
-bpy.ops.render.render(write_still=True)
+else:
+    pose_sheet(act_walk, [0, 4, 8, 12, 16, 20, 24, 28], "walk", (1.0, 0.0, 0.08))
+    pose_sheet(act_run, [0, 3, 5, 8, 10, 13, 15, 18], "run", (1.0, 0.0, 0.08))
+    pose_sheet(act_idle, [0, 12, 24, 36, 48, 60, 72, 84], "idle", (-0.5, -1.0, 0.2), (0, 0, 0.92))
+    pose_sheet(act_door, [0, 6, 12, 18, 24, 32, 42, 53], "door", (-1.0, -0.8, 0.25), (-0.1, -0.1, 0.95))
+    arm.animation_data.action = act_idle
+    scene.frame_set(0)
+    aim(cam, (-0.35, -1.0, 0.15), (0, 0, 0.9))
+    cam.data.ortho_scale = 2.1
+    scene.render.filepath = out[:-4] + "_preview.png"
+    bpy.ops.render.render(write_still=True)
+    # close-ups of the face: front, three-quarter, side, and mid-blink
+    scene.render.resolution_x = scene.render.resolution_y = 512
+    scene.cycles.samples = 110
+    cam.data.ortho_scale = 0.30
+    for name, direction in (("front", (0, -1, 0.02)), ("34", (-0.6, -1, 0.05)), ("side", (-1, -0.1, 0.0))):
+        aim(cam, direction, (0, -0.045, 1.675))
+        scene.render.filepath = os.path.join(os.path.dirname(out), f"person_face_{name}.png")
+        bpy.ops.render.render(write_still=True)
+    arm.animation_data.action = act_idle
+    scene.frame_set(56)
+    aim(cam, (-0.25, -1, 0.05), (0, -0.045, 1.675))
+    scene.render.filepath = os.path.join(os.path.dirname(out), "person_face_blink.png")
+    bpy.ops.render.render(write_still=True)
 print("PERSON_DONE")

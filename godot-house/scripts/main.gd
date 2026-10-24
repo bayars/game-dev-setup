@@ -8,7 +8,6 @@ extends Node3D
 ## (hold the button on held steps), wheel zooms, Esc steps back.
 ## Flags (after `--`): --selftest (plays all of day 1, prints SELFTEST_OK / SELFTEST_FAIL), --quality=<level>
 
-const PERSON := preload("res://assets/models/worker.glb")
 const START_MINUTE := 8 * 60.0          # 08:00
 const MINUTES_PER_SECOND := 1.0
 const REACH := 1.5                      # how close you must stand to a job or a load
@@ -29,6 +28,7 @@ var tomas: Actor
 var linda: Npc
 var daniel: Npc
 var rose: Npc
+var sofia: Npc
 var residents: Array[Npc] = []
 var current: Actor
 var follow := true                     # the brother you are not controlling follows you
@@ -73,12 +73,15 @@ func _ready() -> void:
 	add_child(site)
 	site.setup(house, gfx)
 
-	nico = _spawn(Actor.new(), "Nico", Color(0.11, 0.5, 0.55), Color(0.18, 0.21, 0.32), Vector3(10.0, 0.05, 14.0))
-	tomas = _spawn(Actor.new(), "Tomas", Color(0.55, 0.18, 0.14), Color(0.25, 0.24, 0.22), Vector3(11.2, 0.05, 14.6))
-	linda = _spawn(Npc.new(), "Linda", Color(0.45, 0.3, 0.55), Color(0.2, 0.2, 0.25), Vector3(9.8, 0.05, 10.5)) as Npc
-	daniel = _spawn(Npc.new(), "Daniel", Color(0.75, 0.62, 0.2), Color(0.22, 0.3, 0.45), Vector3(3.5, 0.05, 4.4)) as Npc
-	rose = _spawn(Npc.new(), "Rose", Color(0.6, 0.55, 0.5), Color(0.3, 0.27, 0.3), Vector3(12.2, 0.05, 6.6)) as Npc
-	residents = [linda, daniel, rose]
+	nico = _spawn(Actor.new(), "Nico", Vector3(10.0, 0.05, 14.0))
+	tomas = _spawn(Actor.new(), "Tomas", Vector3(11.2, 0.05, 14.6))
+	linda = _spawn(Npc.new(), "Linda", Vector3(9.8, 0.05, 10.5)) as Npc
+	daniel = _spawn(Npc.new(), "Daniel", Vector3(3.5, 0.05, 4.4)) as Npc
+	rose = _spawn(Npc.new(), "Rose", Vector3(12.2, 0.05, 6.6)) as Npc
+	sofia = _spawn(Npc.new(), "Sofia", House.room_center("Sofia's room") + Vector3(0, 0.05, 0)) as Npc
+	sofia.idle_clip = "phone"          # in her room on her phone all morning
+	sofia.hearing = 0.6
+	residents = [linda, daniel, rose, sofia]
 	linda.hearing = 1.2
 	linda.wander = [Vector3(2.5, 0, 1.3), Vector3(10.0, 0, 5.0), House.room_center("Rose's room"), Vector3(10.0, 0, 10.5)]
 	daniel.wander = [Vector3(3.5, 0, 4.6), Vector3(4.8, 0, 3.0), Vector3(7.0, 0, 6.4), Vector3(2.4, 0, 5.0)]
@@ -146,10 +149,10 @@ func _add_lamps() -> void:
 		l.shadow_enabled = true
 		(house.upper if r[2] == 1 else self as Node).add_child(l)
 
-func _spawn(a: Actor, who: String, jacket: Color, pants: Color, at: Vector3) -> Actor:
+func _spawn(a: Actor, who: String, at: Vector3) -> Actor:
 	add_child(a)
 	a.position = at
-	a.setup(PERSON, who, jacket, pants, gfx)
+	a.setup(who, gfx)
 	return a
 
 func _carryable(what: String, prop: String, footprint: Vector3, yaw: float, at: Vector3) -> Carryable:
@@ -497,8 +500,10 @@ func _process(delta: float) -> void:
 	_update_prompt()
 	cam.floor_y = House.UP if House.level_of(current.global_position + Vector3(0, 0.6, 0)) == 1 else 0.0
 	house.update_cutaway(current.global_position, cam.toward_camera(), delta)
-	for a in [nico, tomas] + residents:      # people upstairs vanish with the upper floor
-		a.visible = House.level_of(a.global_position + Vector3(0, 0.6, 0)) <= house.level_shown
+	for a in [nico, tomas] + residents:      # people upstairs vanish with the upper floor; name tags show
+		var level := House.level_of(a.global_position + Vector3(0, 0.6, 0))   # only on the floor in view
+		a.visible = level <= house.level_shown
+		a.show_tag(level == house.level_shown)
 	if _board_dirty:
 		_board_dirty = false
 		_refresh_board()

@@ -2,19 +2,19 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cybvj7bpgjl3d"
-path="res://.godot/imported/worker_EyeTex.png-bcd1b6534af855d4714acf4ece6f317c.ctex"
+uid="uid://5evlbtgmawr1"
+path="res://.godot/imported/person_nico_EyeTex.png-68f63bb95d2e9fc6c3723d517448a6dc.ctex"
 metadata={
 "vram_texture": false
 }
 generator_parameters={
-"md5": "b66c2dee6618bbeaafebaf1f7fae8622"
+"md5": "11fe6245ea1be0cb3cc226c22570c255"
 }
 
 [deps]
 
-source_file="res://assets/models/worker_EyeTex.png"
-dest_files=["res://.godot/imported/worker_EyeTex.png-bcd1b6534af855d4714acf4ece6f317c.ctex"]
+source_file="res://assets/models/person_nico_EyeTex.png"
+dest_files=["res://.godot/imported/person_nico_EyeTex.png-68f63bb95d2e9fc6c3723d517448a6dc.ctex"]
 
 [params]
 

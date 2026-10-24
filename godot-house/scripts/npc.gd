@@ -32,3 +32,20 @@ func hear(at: Vector3, radius: float, what: String, minute: float, where: String
 	var place := "outside" if where == "Outside" else "in the " + where
 	noticed.append("%02d:%02d heard %s %s" % [int(minute) / 60, int(minute) % 60, what, place])
 	return true
+
+## The Seen log folded for reading: one line per kind of thing heard, with every time it happened
+## ("heard a loud bang in the Work room  (09:03, 09:26)").
+static func summarize(log: Array[String]) -> Array[String]:
+	var order: Array[String] = []
+	var times := {}
+	for entry in log:
+		var when := entry.substr(0, 5)
+		var what := entry.substr(6)
+		if not times.has(what):
+			times[what] = []
+			order.append(what)
+		times[what].append(when)
+	var out: Array[String] = []
+	for what in order:
+		out.append("%s  (%s)" % [what, ", ".join(times[what])])
+	return out

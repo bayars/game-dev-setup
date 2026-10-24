@@ -2,31 +2,16 @@ class_name Carryable
 extends Node3D
 ## A heavy object the brothers move (boxed couch, dishwasher; on day 2 the body uses the same rules).
 ## One carrier: slow and loud (noise rings residents hear). Two carriers: fast and quiet.
+## The look is a prop from house_props.glb; its long side runs along the carriers' walking direction.
 
 var label := ""
+var size := Vector3.ONE                # footprint and height, metres (x across, z along the carry)
 var carriers: Array[Actor] = []
 
-func setup(what: String, size: Vector3, color: Color) -> void:
+func setup(what: String, house: House, prop_name: String, footprint: Vector3, yaw_deg: float) -> void:
 	label = what
-	var mi := MeshInstance3D.new()
-	var mesh := BoxMesh.new()
-	mesh.size = size
-	mi.mesh = mesh
-	var m := StandardMaterial3D.new()
-	m.albedo_color = color
-	m.roughness = 0.9
-	mi.material_override = m
-	mi.position.y = size.y / 2.0
-	add_child(mi)
-	var tag := Label3D.new()
-	tag.text = what
-	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	tag.font_size = 28
-	tag.outline_size = 8
-	tag.pixel_size = 0.006
-	tag.position.y = size.y + 0.35
-	tag.modulate = Color(1, 0.9, 0.6)
-	add_child(tag)
+	size = footprint
+	house.prop(prop_name, Vector3.ZERO, yaw_deg, false, self)
 
 func is_carried() -> bool:
 	return not carriers.is_empty()

@@ -3,4 +3,6 @@
 *.exr filter=lfs diff=lfs merge=lfs -text
 releases/*.zip filter=lfs diff=lfs merge=lfs -text
 godot-*/assets/models/person.glb filter=lfs diff=lfs merge=lfs -text
+godot-house/assets/models/*.glb filter=lfs diff=lfs merge=lfs -text
+godot-house/assets/models/*.png filter=lfs diff=lfs merge=lfs -text
 godot-*/assets/textures/*.png filter=lfs diff=lfs merge=lfs -text

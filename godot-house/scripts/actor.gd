@@ -1,7 +1,8 @@
 class_name Actor
 extends CharacterBody3D
 ## A person in the house: the rigged person model, navigation (click-to-move, orders, schedules) and
-## direct steering (WASD for the controlled brother). Walk/run playback follows the real speed.
+## direct steering (WASD for the controlled brother). Walk/run/carry playback follows the real speed;
+## work clips (`work`) and a tool in the right hand (`hold_tool`) come from the install view.
 
 signal arrived
 
@@ -9,6 +10,11 @@ const WALK_SPEED := 2.2
 const RUN_SPEED := 4.2
 const WALK_NATURAL := 1.75   # m/s that one pass of the walk clip covers at speed_scale 1
 const RUN_NATURAL := 4.6
+const CARRY_NATURAL := 1.3
+const DRAG_NATURAL := 0.75
+const TOOLS := preload("res://assets/models/tools.glb")
+## How a tool sits in the right hand: the grip (tool Y) across the palm, the working end forward.
+static var GRIP := Transform3D(Basis.from_euler(Vector3(PI / 2, 0, 0)), Vector3(0, 0.07, 0.02))
 const ACCEL := 12.0
 const GRAVITY := 20.0
 
@@ -16,15 +22,22 @@ var display_name := ""
 var controlled := false
 var steer := Vector2.ZERO      # world xz direction for direct control (WASD); overrides navigation
 var running := false
-var busy := false              # in a minigame or holding something in place: does not move
+var busy := false              # in the install view or holding something in place: does not move
 var speed_mul := 1.0           # carrying slows you down
 var lead: Actor = null         # pair carrying: walk behind this actor at `lead_gap` metres
 var lead_gap := 1.6
+var carrying := ""              # "", "solo" (pushing it along, loud) or "pair" (lifted together)
+var talking := false
+var work_anim := ""             # a work clip that overrides walking and idling
 var model: Node3D
 var agent: NavigationAgent3D
 var _anim: AnimationPlayer
 var _ring: MeshInstance3D
 var _going := false
+var _hand: BoneAttachment3D
+var _tool: Node3D
+var _tool_id := ""
+var _tools_src: Node
 var _fresh := 0                # physics frames since go_to; the agent needs a frame to compute a path
 
 func setup(model_scene: PackedScene, who: String, jacket: Color, pants: Color, gfx: Graphics) -> void:
@@ -46,6 +59,11 @@ func setup(model_scene: PackedScene, who: String, jacket: Color, pants: Color, g
 	_anim = model.find_child("AnimationPlayer", true, false)
 	if _anim:
 		_anim.play("idle")
+	var skel := model.find_child("Skeleton3D", true, false) as Skeleton3D
+	if skel:
+		_hand = BoneAttachment3D.new()
+		_hand.bone_name = "Hand_R"
+		skel.add_child(_hand)
 
 	agent = NavigationAgent3D.new()
 	agent.radius = 0.35
@@ -59,10 +77,12 @@ func setup(model_scene: PackedScene, who: String, jacket: Color, pants: Color, g
 	label.text = who
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true
-	label.font_size = 40
-	label.outline_size = 10
-	label.pixel_size = 0.006
-	label.position.y = 2.15
+	label.font_size = 30
+	label.outline_size = 8
+	label.fixed_size = true                # same size on screen when the camera moves in
+	label.pixel_size = 0.00045
+	label.modulate = UiTheme.person_color(who).lightened(0.25)
+	label.position.y = 2.1
 	add_child(label)
 
 	_ring = MeshInstance3D.new()           # selection ring under the controlled brother
@@ -82,6 +102,34 @@ func setup(model_scene: PackedScene, who: String, jacket: Color, pants: Color, g
 	_ring.visible = false
 	_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_ring)
+
+## Play a work clip ("" to go back to walking and idling).
+func work(anim: String, tool := "") -> void:
+	work_anim = anim
+	if tool != _tool_id:
+		hold_tool(tool)
+
+## Put a tool from tools.glb in the right hand ("" empties it). Parts (sheet, planks...) stay in the bag.
+func hold_tool(id: String) -> void:
+	if id == _tool_id or _hand == null:
+		return
+	_tool_id = id
+	if _tool:
+		_tool.queue_free()
+		_tool = null
+	if id == "" or id in ["sheet", "planks", "underlay", "plate"]:
+		return
+	if _tools_src == null:
+		_tools_src = TOOLS.instantiate()
+	var src := _tools_src.get_node_or_null("T_" + id) as Node3D
+	if src == null:
+		return
+	_tool = src.duplicate() as Node3D
+	_tool.transform = GRIP
+	_hand.add_child(_tool)
+
+func tool_in_hand() -> String:
+	return _tool_id
 
 func set_controlled(on: bool) -> void:
 	controlled = on
@@ -176,10 +224,17 @@ func _animate(planar: float) -> void:
 		return
 	var clip := "idle"
 	var scale := 1.0
-	if planar > 0.15:
+	if work_anim != "":
+		clip = work_anim
+	elif carrying != "":
+		clip = "drag" if carrying == "solo" else "carry"
+		scale = planar / (DRAG_NATURAL if carrying == "solo" else CARRY_NATURAL)
+	elif planar > 0.15:
 		var run_clip := running and speed_mul >= 1.0
 		clip = "run" if run_clip else "walk"
 		scale = planar / (RUN_NATURAL if run_clip else WALK_NATURAL)
+	elif talking:
+		clip = "talk"
 	if _anim.current_animation != clip:
 		_anim.play(clip, 0.25)
-	_anim.speed_scale = clampf(scale, 0.3, 2.0)
+	_anim.speed_scale = 0.0 if carrying != "" and planar < 0.15 else clampf(scale, 0.3, 2.0)

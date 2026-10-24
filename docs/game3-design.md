@@ -23,7 +23,7 @@ Design guardrail: concealment, evidence and investigation are **game-defined rul
 
 | Mechanic | Taught by |
 |---|---|
-| Work tasks | Short minigames: hang drywall, screw studs, run wiring to a junction box, lay flooring, assemble couch and table, install dishwasher |
+| Work tasks | The install view: the camera moves in on the job, the tool bag opens as a tray, you pick the right tool and work on glowing hotspots in the scene while the brother plays the matching clip with the tool in hand. Every piece appears in the house (studs stand up, drywall sheets are lifted, screwed, taped and mudded; socket, laminate, dishwasher, couch and table). Wrong tool or wrong order is a mistake; a hammer where none is needed or a wrong wire is loud |
 | Switching control | Tab switches between Nico and Tomas. Each has his own task queue |
 | Orders to the brother | "Go work on X", "Keep Linda busy", "Watch the hallway", "Follow me", "Help me carry" |
 | Carrying heavy things | **Carrying the couch alone:** slow and loud (noise rings that residents hear). **Carrying with both brothers:** fast and quiet. This is exactly how the body moves on day 2 |
@@ -34,7 +34,7 @@ Design guardrail: concealment, evidence and investigation are **game-defined rul
 
 ### Day 2: A normal working day that turns (main game)
 1. **Morning routine.** It should feel like an ordinary job day: new tasks, small talk, Daniel helping.
-2. **The accident.** It differs per playthrough (see Accident cases). A **zoom cinematic** cuts from the isometric view to a close camera on what happened (slow push-in, sound drops out, heartbeat), then pulls back to the iso view.
+2. **The accident.** It happens upstairs, in Daniel's room (the attic conversion that is day 2's job), so moving the body means the stairs: slower, louder alone, and past more of the house. It differs per playthrough (see Accident cases). A **zoom cinematic** cuts from the isometric view to a close camera on what happened (slow push-in, sound drops out, heartbeat), then pulls back to the iso view.
 3. **The choice moment.**
    - **"Call for help / tell the truth"** is always available.
    - Truth ending: it always ends in an unjust outcome card, showing why it isn't accepted (blamed for negligence, no permits, no lawyer, deportation). It is printed as text and closes the run.
@@ -49,7 +49,7 @@ Design guardrail: concealment, evidence and investigation are **game-defined rul
 ### Accident cases (picked at the start of day 2, rotating or random per run)
 | Case | Opening event | What it changes |
 |---|---|---|
-| Falling stud | A badly fixed stud falls from the frame | Evidence in the work room, heavy-item tokens |
+| Falling stud | A badly fixed stud falls from the frame | Evidence in Daniel's room, heavy-item tokens |
 | Nail gun | The nail gun fires when Daniel picks it up | The tool is evidence; the noise was heard |
 | Drywall sheet | A sheet tips over while Daniel holds it | Board damage, a dust trail |
 | Ladder (later) | Ladder slips during ceiling work | Height and fall plausibility |
@@ -134,7 +134,7 @@ New cases are added without code changes.
 
 ## Milestones (each one a branch and a PR you merge)
 1. **Greybox:** the house blockout, iso 3D camera with cutaway, click and WASD movement, Tab between the brothers, one resident on a schedule.
-2. **Day 1 tutorial:** the work minigames, job board, orders to the brother, solo vs pair carrying (couch) with noise rings, end-of-day pay.
+2. **Day 1 tutorial:** the install view (tools, hotspots, visible results), job list, orders to the brother, solo vs pair carrying (couch) with noise rings, end-of-day pay.
 3. **Characters:** parametric people (7), the new animations, ragdoll.
 4. **Day 2 and accidents:** normal-day flow, three accident cases with the zoom cinematic, the Truth branch with its card.
 5. **Cover-up loop:** body moving (solo or pair), evidence tokens, the work facade, the four residents' search AI and Seen logs, discovery trigger.

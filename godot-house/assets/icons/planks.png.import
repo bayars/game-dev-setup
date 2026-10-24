@@ -2,19 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dnajsl0ufu3q2"
-path="res://.godot/imported/person_EyeTex.png-f054167ec112b090165f181537969a8b.ctex"
+uid="uid://cp0trh11nfkvn"
+path="res://.godot/imported/planks.png-5c86fcfd78eef05cb833155a4bbfbc12.ctex"
 metadata={
 "vram_texture": false
-}
-generator_parameters={
-"md5": "b66c2dee6618bbeaafebaf1f7fae8622"
 }
 
 [deps]
 
-source_file="res://assets/models/person_EyeTex.png"
-dest_files=["res://.godot/imported/person_EyeTex.png-f054167ec112b090165f181537969a8b.ctex"]
+source_file="res://assets/icons/planks.png"
+dest_files=["res://.godot/imported/planks.png-5c86fcfd78eef05cb833155a4bbfbc12.ctex"]
 
 [params]
 
@@ -26,7 +23,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

@@ -2,19 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b6bnuyejpaso2"
-path="res://.godot/imported/person_FaceSkin.png-249adbd44a46f1c954252effc122597f.ctex"
+uid="uid://4mdoxo6q5woy"
+path="res://.godot/imported/sheet.png-97dd33aa7a5a75f0baa28ab2d976ace3.ctex"
 metadata={
 "vram_texture": false
-}
-generator_parameters={
-"md5": "fdc6b1b4cbf1e7706e52fef437e0d824"
 }
 
 [deps]
 
-source_file="res://assets/models/person_FaceSkin.png"
-dest_files=["res://.godot/imported/person_FaceSkin.png-249adbd44a46f1c954252effc122597f.ctex"]
+source_file="res://assets/icons/sheet.png"
+dest_files=["res://.godot/imported/sheet.png-97dd33aa7a5a75f0baa28ab2d976ace3.ctex"]
 
 [params]
 
@@ -26,7 +23,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

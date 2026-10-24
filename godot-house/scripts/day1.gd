@@ -1,8 +1,12 @@
 class_name Day1
 extends RefCounted
-## Day 1 content: the first job (tutorial). The jobs teach every mechanic day 2 relies on:
-## minigames, holding a sheet together, sending the other brother off to work, and carrying heavy loads
-## alone (slow, loud) or together (fast, quiet).
+## Day 1 content: the first job (tutorial). The jobs teach every mechanic day 2 relies on: choosing the
+## right tool and working on the spot in the install view, holding a sheet together, sending the other
+## brother off to work, carrying heavy loads alone (slow, loud) or together (fast, quiet), and the stairs
+## up to Daniel's room, where tomorrow's work is.
+##
+## Steps: {tool, text, kind = "spots" (click each hotspot) | "hold" (keep the button down) | "order"
+## (hotspots in a set order), seconds (hold)}. The hotspots and what appears are in Worksite.
 
 const COUCH_TARGET := Vector3(2.0, 0, 2.7)
 const DISHWASHER_TARGET := Vector3(5.1, 0, 0.75)
@@ -10,50 +14,54 @@ const DISHWASHER_TARGET := Vector3(5.1, 0, 0.75)
 static func jobs(couch: Carryable, dishwasher: Carryable) -> Dictionary:
 	var list: Array[Job] = []
 
-	var j := Job.new("couch_in", "Carry the couch in from the van", Vector3.ZERO)
+	var j := Job.new("couch_in", "Carry in the couch", Vector3.ZERO)
 	j.carry = couch
 	j.carry_target = COUCH_TARGET
 	j.pay = 40
 	list.append(j)
 
-	j = Job.new("dishwasher_in", "Bring the dishwasher to the kitchen", Vector3.ZERO)
+	j = Job.new("dishwasher_in", "Bring in the dishwasher", Vector3.ZERO)
 	j.carry = dishwasher
 	j.carry_target = DISHWASHER_TARGET
 	j.pay = 30
 	list.append(j)
 
-	j = Job.new("studs", "Fix the studs to the plates", Vector3(5.75, 0, 3.4))
+	j = Job.new("studs", "Frame the new wall", Vector3(7.0, 0, 3.0))
 	j.steps = [
-		{"type": "timing", "hits": 4, "label": "Drive the screws into the bottom plate"},
-		{"type": "timing", "hits": 3, "label": "Toe-screw the top of each stud"},
+		{"tool": "tape", "kind": "hold", "seconds": 1.5, "text": "Measure and mark the stud positions on the plate"},
+		{"tool": "drill", "kind": "spots", "text": "Stand each stud on its mark and screw it down"},
+		{"tool": "drill", "kind": "hold", "seconds": 1.5, "text": "Screw the top plate across the studs"},
 	]
 	j.pay = 70
 	list.append(j)
 
-	j = Job.new("drywall", "Hang the drywall sheets", Vector3(5.75, 0, 4.6))
+	j = Job.new("drywall", "Hang the drywall", Vector3(7.0, 0, 4.2))
 	j.needs_two = true
 	j.requires = ["studs"]
 	j.steps = [
-		{"type": "hold", "seconds": 2.5, "label": "Lift the sheet onto the studs (the other brother holds it)"},
-		{"type": "timing", "hits": 5, "label": "Screw the sheet off"},
-		{"type": "hold", "seconds": 3.0, "label": "Tape and mud the seams"},
+		{"tool": "knife", "kind": "hold", "seconds": 1.2, "text": "Score and snap the last sheet to size"},
+		{"tool": "sheet", "kind": "spots", "text": "Lift each sheet onto the studs (Tomas holds it while you fix it)"},
+		{"tool": "drill", "kind": "spots", "text": "Screw the sheets to every stud"},
+		{"tool": "taping", "kind": "spots", "text": "Tape the two seams"},
+		{"tool": "mud", "kind": "hold", "seconds": 2.5, "text": "Mud over the tape and the screw heads"},
 	]
 	j.pay = 90
 	list.append(j)
 
-	j = Job.new("wiring", "Wire the new outlet to the junction box", Vector3(7.6, 0, 1.0))
+	j = Job.new("wiring", "Wire the new socket", Vector3(7.6, 0, 1.0))
 	j.steps = [
-		{"type": "sequence", "keys": ["2", "1", "3"], "names": {"1": "Black (live)", "2": "Copper (earth)", "3": "White (neutral)"},
-			"label": "Connect earth first, then live, then neutral"},
-		{"type": "hold", "seconds": 1.5, "label": "Fold the wires in and close the box"},
+		{"tool": "stripper", "kind": "hold", "seconds": 1.2, "text": "Strip the wire ends"},
+		{"tool": "screwdriver", "kind": "order", "text": "Connect earth first, then live, then neutral"},
+		{"tool": "plate", "kind": "spots", "text": "Fit the socket cover"},
 	]
 	j.pay = 80
 	list.append(j)
 
-	j = Job.new("flooring", "Lay the laminate by the window", Vector3(7.7, 0, 4.9))
+	j = Job.new("flooring", "Lay the laminate", Vector3(7.7, 0, 4.9))
 	j.steps = [
-		{"type": "hold", "seconds": 2.0, "label": "Roll out the underlay"},
-		{"type": "timing", "hits": 4, "label": "Tap the planks together"},
+		{"tool": "underlay", "kind": "hold", "seconds": 1.5, "text": "Roll out the underlay"},
+		{"tool": "planks", "kind": "spots", "text": "Lay the planks, row by row"},
+		{"tool": "mallet", "kind": "hold", "seconds": 1.2, "text": "Tap the joints tight"},
 	]
 	j.pay = 70
 	list.append(j)
@@ -61,20 +69,28 @@ static func jobs(couch: Carryable, dishwasher: Carryable) -> Dictionary:
 	j = Job.new("dishwasher", "Install the dishwasher", DISHWASHER_TARGET + Vector3(0, 0, 0.75))
 	j.requires = ["dishwasher_in"]
 	j.steps = [
-		{"type": "sequence", "keys": ["1", "2", "3"], "names": {"1": "Water in", "2": "Drain hose", "3": "Power"},
-			"label": "Connect water, then the drain, then power"},
-		{"type": "hold", "seconds": 2.0, "label": "Level it and slide it under the counter"},
+		{"tool": "knife", "kind": "hold", "seconds": 1.2, "text": "Cut the box open"},
+		{"tool": "wrench", "kind": "spots", "text": "Connect the water and the drain hose"},
+		{"tool": "level", "kind": "hold", "seconds": 1.5, "text": "Slide it in and level it"},
 	]
 	j.pay = 60
 	list.append(j)
 
-	j = Job.new("assemble", "Assemble the couch and the table", COUCH_TARGET + Vector3(0, 0, 1.0))
+	j = Job.new("assemble", "Assemble couch and table", COUCH_TARGET + Vector3(1.5, 0, 0.9))
 	j.requires = ["couch_in"]
 	j.steps = [
-		{"type": "hold", "seconds": 2.5, "label": "Unpack and bolt on the couch legs"},
-		{"type": "timing", "hits": 3, "label": "Fix the table legs"},
+		{"tool": "knife", "kind": "hold", "seconds": 1.2, "text": "Cut the box open"},
+		{"tool": "allen", "kind": "spots", "text": "Bolt the legs onto the couch"},
+		{"tool": "allen", "kind": "spots", "text": "Bolt the legs onto the table"},
 	]
 	j.pay = 50
+	list.append(j)
+
+	j = Job.new("measure", "Measure Daniel's room (upstairs)", Vector3(4.5, House.UP, 3.0))
+	j.steps = [
+		{"tool": "tape", "kind": "spots", "text": "Measure wall to wall for tomorrow's job"},
+	]
+	j.pay = 20
 	list.append(j)
 
 	var out := {}
@@ -84,18 +100,21 @@ static func jobs(couch: Carryable, dishwasher: Carryable) -> Dictionary:
 
 const INTRO := [
 	["Linda", "You must be the brothers. Come in, come in. Mind the boxes."],
-	["Linda", "Today it's just the living room and the kitchen. The wall, the outlet, the floor by the window."],
+	["Linda", "Today it's the living room and the kitchen. The new wall, the socket, the floor by the window."],
 	["Linda", "The couch and the dishwasher are in your van? Good. Cash at the end of the day, like we said."],
+	["Linda", "And tomorrow, Daniel's room upstairs. Have a look at it before you go."],
 	["Tomas", "(quietly) Cash, no questions. We do this one right, Nico."],
 	["Daniel", "Hi! I'm Daniel. Mind if I watch? I've always wanted to learn how walls are made."],
 	["Nico", "Sure. Just stay clear of the tools."],
 ]
 
 const HINTS := {
-	"start": "The job board (left) lists today's work. Walk to a job and press E. Heavy boxes: lift with Tomas nearby (F: follow) to carry together.",
-	"solo_carry": "Carrying alone is slow and loud: the rings show who can hear you. Press H to call Tomas, then lift together.",
-	"pair_carry": "Carrying together: fast and quiet. Press E to put it down at the marked spot.",
-	"needs_two": "This one needs two people. Send Tomas (button on the job board or right click), then start it.",
+	"start": "Today's jobs are on the left. Walk to a job and press E to start working on it.",
+	"install": "Pick the right tool from the bag (click or 1-9), then click the glowing spots. Wheel zooms, Esc steps back.",
+	"solo_carry": "Alone it's slow and loud: the rings show who can hear you. Press H to call Tomas and lift together.",
+	"pair_carry": "Together it's fast and quiet. Press E at the marked spot to put it down.",
+	"needs_two": "This one needs two. Send Tomas from the job list, or press H to call him, then start.",
+	"stairs": "The stairs are in the east room, past the hallway.",
 }
 
 const DANIEL_LINES := {
@@ -107,6 +126,7 @@ const DANIEL_LINES := {
 	"assemble": "First one to sit on it! ...Okay, after you guys.",
 	"couch_in": "That box looked heavy. You two make it look easy.",
 	"dishwasher_in": "Do you always carry things in together?",
+	"measure": "That's my room! Tomorrow you make it bigger, right? I'll help.",
 }
 
 const PAY_LINES := [

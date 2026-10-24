@@ -1,12 +1,14 @@
 extends Node3D
-## "Off the Books". Milestone 2: day 1, the first job (tutorial). Design: docs/game3-design.md
+## "Off the Books". Day 1, the first job (tutorial). Design: docs/game3-design.md
 ##
 ## Controls: left click / WASD move, Shift run, E interact (start a job, lift or put down a load), Tab
-## switch brother, right click send the other brother there, F the other brother follows / stays, H call
-## him over, Q/R rotate the view, mouse wheel zoom, G graphics, Esc cancel a job / quit.
+## switch brother, right click send the other brother there, F the other brother follows / waits, H call
+## him over, J fold the job list, F1 controls, Q/R rotate the view, mouse wheel zoom, G graphics, Esc stop
+## working / quit. In the install view: 1-9 or click picks a tool, click a glowing spot to work on it
+## (hold the button on held steps), wheel zooms, Esc steps back.
 ## Flags (after `--`): --selftest (plays all of day 1, prints SELFTEST_OK / SELFTEST_FAIL), --quality=<level>
 
-const PERSON := preload("res://assets/models/person.glb")
+const PERSON := preload("res://assets/models/worker.glb")
 const START_MINUTE := 8 * 60.0          # 08:00
 const MINUTES_PER_SECOND := 1.0
 const REACH := 1.5                      # how close you must stand to a job or a load
@@ -14,11 +16,14 @@ const AUTO_SECONDS := 24.0              # the other brother doing a job alone ta
 const SOLO_SPEED := 0.42                # carrying alone: slow ...
 const PAIR_SPEED := 0.9                 # ... together: nearly walking pace
 const DRAG_NOISE := 10.0                # metres a solo carry can be heard
-const BANG_NOISE := 7.0                 # a missed hammer blow / wrong wire
+const BANG_NOISE := 7.0                 # a hammer where none is needed, a wrong wire
 
 var gfx: Graphics
 var house: House
+var site: Worksite
 var cam: IsoCamera
+var hud: Hud
+var install: Install
 var nico: Actor
 var tomas: Actor
 var linda: Npc
@@ -33,21 +38,17 @@ var cash := 0
 var day_over := false
 
 var _carry: Carryable
+var _loads: Array[Carryable] = []
 var _noise_timer := 0.0
-var _mg_job: Job
 var _auto_job: Job                     # what the other brother is doing on his own
-var _minigame: Minigame
+var _auto_units := 0                   # how many of its hotspots he has finished
 var _dialogue: Dialogue
-var _clock: Label
-var _who: Label
-var _prompt: Label
-var _hint: Label
-var _board: VBoxContainer
-var _end: Label
 var _selftest := false
 var _follow_timer := 0.0
 var _nav_ok := false
 var _hints_shown := {}
+var _rings := {}                       # job id -> floor ring at its station (or its delivery spot)
+var _board_dirty := true
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
@@ -68,6 +69,9 @@ func _ready() -> void:
 	house.build(gfx)
 	get_tree().physics_frame.connect(house.bake_nav, CONNECT_ONE_SHOT)
 	_add_lamps()
+	site = Worksite.new()
+	add_child(site)
+	site.setup(house, gfx)
 
 	nico = _spawn(Actor.new(), "Nico", Color(0.11, 0.5, 0.55), Color(0.18, 0.21, 0.32), Vector3(10.0, 0.05, 14.0))
 	tomas = _spawn(Actor.new(), "Tomas", Color(0.55, 0.18, 0.14), Color(0.25, 0.24, 0.22), Vector3(11.2, 0.05, 14.6))
@@ -77,20 +81,41 @@ func _ready() -> void:
 	residents = [linda, daniel, rose]
 	linda.hearing = 1.2
 	linda.wander = [Vector3(2.5, 0, 1.3), Vector3(10.0, 0, 5.0), House.room_center("Rose's room"), Vector3(10.0, 0, 10.5)]
-	daniel.wander = [Vector3(3.5, 0, 4.4), Vector3(4.8, 0, 3.0), Vector3(7.0, 0, 6.2), Vector3(2.4, 0, 5.4)]
+	daniel.wander = [Vector3(3.5, 0, 4.6), Vector3(4.8, 0, 3.0), Vector3(7.0, 0, 6.4), Vector3(2.4, 0, 5.0)]
 	rose.hearing = 0.8
 
-	var couch := _carryable("Couch (boxed)", Vector3(0.95, 0.8, 2.1), Color(0.66, 0.55, 0.4), Vector3(6.6, 0, 14.4))
-	var dishwasher := _carryable("Dishwasher", Vector3(0.62, 0.86, 0.62), Color(0.75, 0.72, 0.62), Vector3(6.6, 0, 17.4))
+	var couch := _carryable("boxed couch", "CouchBox", Vector3(0.95, 0.8, 2.1), 90, Vector3(6.6, Worksite.FLOOR, 14.4))
+	var dishwasher := _carryable("dishwasher", "DishwasherBox", Vector3(0.66, 0.88, 0.66), 0, Vector3(6.6, Worksite.FLOOR, 17.4))
 	jobs = Day1.jobs(couch, dishwasher)
-	_add_target_markers()
+	site.carry_props = {"couch_in": couch, "dishwasher_in": dishwasher}
+	_add_rings()
 
 	cam = IsoCamera.new()
 	add_child(cam)
-	_build_ui()
+	hud = Hud.new()
+	add_child(hud)
+	hud.send_job.connect(send_to_job)
+	hud.switch_brother.connect(switch_brother)
+	hud.toggle_follow.connect(toggle_follow)
+	hud.call_brother.connect(call_brother)
+	_dialogue = Dialogue.new()
+	hud.add_ui(_dialogue)
+	_dialogue.speaking.connect(func(who: String):
+		for a in [nico, tomas] + residents:
+			a.talking = a.display_name == who)
+	install = Install.new()
+	add_child(install)
+	install.finished.connect(_on_install_finished)
+	install.cancelled.connect(_on_install_cancelled)
+	install.mistake.connect(func(at: Vector3, loud: bool, what: String):
+		if loud:
+			make_noise(at, BANG_NOISE, what))
+	install.changed.connect(func(): hud.show_install(install))
+	hud.tool_picked.connect(install.select)
+
 	_control(nico)
 	cam.snap_to_target()
-	gfx.changed.connect(func(n: String): _set_hint("Graphics: %s   (G to change)" % n))
+	gfx.changed.connect(func(n: String): hud.toast("Graphics: %s   (G to change)" % n, 2.5))
 	if _selftest:
 		Engine.time_scale = 4.0
 		_dialogue.fast = true
@@ -108,14 +133,18 @@ func _tune_lighting() -> void:
 	gfx.env.fog_density = 0.0005
 
 func _add_lamps() -> void:
-	for room in House.ROOMS:
+	var seen := {}
+	for r in House.ROOMS:
+		if seen.has(r[0]):
+			continue
+		seen[r[0]] = true
 		var l := OmniLight3D.new()
-		l.position = House.room_center(room) + Vector3(0, 2.4, 0)
+		l.position = House.room_center(r[0]) + Vector3(0, 2.4, 0)
 		l.light_color = Color(1.0, 0.82, 0.62)
 		l.light_energy = 0.6
 		l.omni_range = 6.0
 		l.shadow_enabled = true
-		add_child(l)
+		(house.upper if r[2] == 1 else self as Node).add_child(l)
 
 func _spawn(a: Actor, who: String, jacket: Color, pants: Color, at: Vector3) -> Actor:
 	add_child(a)
@@ -123,30 +152,37 @@ func _spawn(a: Actor, who: String, jacket: Color, pants: Color, at: Vector3) -> 
 	a.setup(PERSON, who, jacket, pants, gfx)
 	return a
 
-func _carryable(what: String, size: Vector3, color: Color, at: Vector3) -> Carryable:
+func _carryable(what: String, prop: String, footprint: Vector3, yaw: float, at: Vector3) -> Carryable:
 	var c := Carryable.new()
 	add_child(c)
 	c.position = at
-	c.setup(what, size, color)
+	c.setup(what, house, prop, footprint, yaw)
+	_loads.append(c)
 	return c
 
-## Faint floor marks where the carried loads go.
-func _add_target_markers() -> void:
+## Soft rounded rings on the floor: where each open job is done, and where each load goes.
+func _add_rings() -> void:
 	for job in jobs.values():
-		if job.carry == null:
-			continue
-		var mark := MeshInstance3D.new()
-		var plane := PlaneMesh.new()
-		plane.size = Vector2(1.2, 1.2)
-		mark.mesh = plane
+		var ring := MeshInstance3D.new()
+		var torus := TorusMesh.new()
+		var big: bool = job.carry != null
+		torus.inner_radius = 0.62 if big else 0.36
+		torus.outer_radius = 0.7 if big else 0.42
+		torus.rings = 48
+		ring.mesh = torus
 		var m := StandardMaterial3D.new()
-		m.albedo_color = Color(1.0, 0.8, 0.3, 0.35)
+		m.albedo_color = Color(1.0, 0.76, 0.36, 0.55)
+		m.emission_enabled = true
+		m.emission = Color(1.0, 0.7, 0.3)
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mark.material_override = m
-		mark.position = job.carry_target + Vector3(0, 0.05, 0)
-		mark.name = "Mark_" + job.id
-		add_child(mark)
+		ring.material_override = m
+		ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		ring.scale.y = 0.1
+		var at: Vector3 = job.carry_target if big else job.station
+		ring.position = at + Vector3(0, Worksite.FLOOR + 0.02, 0)
+		(house.upper if at.y > House.H else self as Node).add_child(ring)
+		_rings[job.id] = ring
 
 # ---------------------------------------------------------------- control
 
@@ -156,12 +192,11 @@ func _control(a: Actor) -> void:
 	current = a
 	a.set_controlled(true)
 	if _auto_job != null and a == _auto_worker():
-		_auto_job = null                         # you took over: he stops working on his own
+		_stop_auto()                              # you took over: he stops working on his own
 	if not a.busy:
 		a.stop()
 	cam.target = a
-	_who.text = "Playing: %s" % a.display_name
-	_refresh_board()
+	_board_dirty = true
 
 func other() -> Actor:
 	return tomas if current == nico else nico
@@ -170,8 +205,8 @@ func _auto_worker() -> Actor:
 	return other()
 
 func switch_brother() -> void:
-	if _carry != null or (_minigame and _minigame.is_active()):
-		_set_hint("Finish what you are doing first.")
+	if _carry != null or install.is_active():
+		hud.toast("Finish what you are doing first.", 2.5)
 		return
 	_control(other())
 
@@ -179,26 +214,28 @@ func order_go(p: Vector3) -> void:
 	if other().busy:
 		return
 	follow = false
-	_auto_job = null
+	_stop_auto()
 	other().go_to(p)
 	_dialogue.bark(other().display_name, "On my way.", 1.5)
 
 func toggle_follow() -> void:
 	follow = not follow
-	_auto_job = null
+	_stop_auto()
 	if not follow:
 		other().stop()
 	_dialogue.bark(other().display_name, "Right behind you." if follow else "I'll wait here.", 1.5)
+	_board_dirty = true
 
 func call_brother() -> void:
 	if other().busy:
 		return
 	follow = true
-	_auto_job = null
+	_stop_auto()
 	other().go_to(current.global_position)
 	_dialogue.bark(other().display_name, "Coming.", 1.2)
+	_board_dirty = true
 
-## Job board button: send the other brother to a job. Jobs he can do alone he starts on his own; for a
+## Job list button: send the other brother to a job. Jobs he can do alone he starts on his own; for a
 ## two-person job he goes and waits to hold; carrying he refuses alone.
 func send_to_job(job: Job) -> void:
 	var o := other()
@@ -211,18 +248,25 @@ func send_to_job(job: Job) -> void:
 		_dialogue.bark(o.display_name, "That has to wait, the other job comes first.", 2.5)
 		return
 	follow = false
-	o.go_to(job.station + Vector3(0.0, 0, 0.6 if job.needs_two else 0.0))
+	_stop_auto()
+	o.go_to(job.station + Vector3(0.0, 0, 1.0 if job.needs_two else 0.0))
 	if job.solo_ok():
 		_auto_job = job
-		_dialogue.bark(o.display_name, "I'll handle %s." % job.title.to_lower(), 2.0)
+		_auto_units = 0
+		_dialogue.bark(o.display_name, "I'll %s." % job.title.to_lower(), 2.0)
 	else:
-		_auto_job = null
 		_dialogue.bark(o.display_name, "I'll hold it. Come and start when you're ready.", 2.0)
+	_board_dirty = true
+
+func _stop_auto() -> void:
+	if _auto_job != null:
+		_auto_worker().work("", "")
+	_auto_job = null
 
 # ---------------------------------------------------------------- interaction
 
 func interact() -> void:
-	if day_over or current.busy:
+	if day_over or current.busy or install.is_active():
 		return
 	if _carry != null and _carry.lead() == current:
 		put_down()
@@ -238,7 +282,9 @@ func _nearest_job() -> Job:
 	var best: Job = null
 	var best_d := REACH
 	for job in jobs.values():
-		if job.carry != null or not job.available(jobs):
+		if job.carry != null or not job.available(jobs) or job == _auto_job:
+			continue
+		if absf(current.global_position.y - job.station.y) > 1.2:
 			continue
 		var d := Vector2(current.global_position.x - job.station.x, current.global_position.z - job.station.z).length()
 		if d < best_d:
@@ -253,9 +299,13 @@ func _nearest_load() -> Carryable:
 				return job.carry
 	return null
 
+func _pair_ready() -> bool:
+	var helper := other()
+	return not helper.busy and helper.global_position.distance_to(current.global_position) < 3.0
+
 func pick_up(c: Carryable) -> void:
 	var helper := other()
-	var pair := not helper.busy and helper.global_position.distance_to(current.global_position) < 3.0
+	var pair := _pair_ready()
 	_carry = c
 	c.carriers = [current]
 	if pair:
@@ -263,9 +313,10 @@ func pick_up(c: Carryable) -> void:
 		helper.stop()
 		helper.lead = current
 		helper.lead_gap = 1.7
-		_auto_job = null
+		_stop_auto()
 	for a in c.carriers:
 		a.speed_mul = PAIR_SPEED if pair else SOLO_SPEED
+		a.carrying = "pair" if pair else "solo"
 	_show_hint_once("pair_carry" if pair else "solo_carry")
 
 func put_down() -> void:
@@ -274,20 +325,22 @@ func put_down() -> void:
 	for a in c.carriers:
 		a.speed_mul = 1.0
 		a.lead = null
+		a.carrying = ""
 	c.carriers = []
-	c.position.y = 0.0
+	c.position.y = Worksite.FLOOR
 	_carry = null
 	for job in jobs.values():
 		var near_load := Vector2(c.position.x - job.carry_target.x, c.position.z - job.carry_target.z).length() < 1.7
 		var near_lead := Vector2(lead_pos.x - job.carry_target.x, lead_pos.z - job.carry_target.z).length() < 1.4
 		if job.carry == c and (near_load or near_lead):
-			c.position = job.carry_target
+			c.position = job.carry_target + Vector3(0, Worksite.FLOOR, 0)
 			c.rotation = Vector3.ZERO
 			complete_job(job)
 
 func start_job(job: Job) -> void:
+	var helper: Actor = null
 	if job.needs_two:
-		var helper := other()
+		helper = other()
 		if helper.global_position.distance_to(job.station) > 2.4 or helper.is_going():
 			_show_hint_once("needs_two", true)
 			_dialogue.bark(current.display_name, "%s, I need you to hold this." % helper.display_name, 2.0)
@@ -295,33 +348,35 @@ func start_job(job: Job) -> void:
 		helper.busy = true
 		helper.face(job.station + Vector3(1, 0, 0))
 	if _auto_job == job:
-		_auto_job = null
+		_stop_auto()
 	current.busy = true
 	current.stop()
-	current.face(job.station + Vector3(1, 0, 0))
-	_mg_job = job
-	_minigame.start(job.title, job.steps)
+	_rings[job.id].visible = false
+	install.start(job, current, helper, site, cam)
+	_show_hint_once("install")
 
-func _on_minigame_finished() -> void:
-	var job := _mg_job
-	_release_mg()
+func _on_install_finished(job: Job) -> void:
+	_release_install(job)
 	complete_job(job)
 
-func _release_mg() -> void:
+func _on_install_cancelled(job: Job) -> void:
+	_release_install(job)
+	_rings[job.id].visible = true
+
+func _release_install(job: Job) -> void:
 	current.busy = false
-	if _mg_job and _mg_job.needs_two:
+	if job.needs_two:
 		other().busy = false
-	_mg_job = null
 
 func complete_job(job: Job) -> void:
 	if job.done:
 		return
 	job.done = true
 	cash += job.pay
-	var mark := get_node_or_null("Mark_" + job.id)
-	if mark:
-		mark.queue_free()
-	_refresh_board()
+	var ring: Node3D = _rings.get(job.id)
+	if ring:
+		ring.visible = false
+	_board_dirty = true
 	if Day1.DANIEL_LINES.has(job.id):
 		_dialogue.bark("Daniel", Day1.DANIEL_LINES[job.id], 3.0)
 	if jobs.values().all(func(j): return j.done):
@@ -341,7 +396,7 @@ func make_noise(at: Vector3, radius: float, what: String) -> void:
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	ring.material_override = m
 	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	ring.position = at + Vector3(0, 0.08, 0)
+	ring.position = Vector3(at.x, floorf(at.y / House.UP + 0.3) * House.UP + 0.08, at.z)
 	ring.scale = Vector3(0.3, 0.05, 0.3)
 	add_child(ring)
 	var t := create_tween().set_parallel(true)
@@ -364,6 +419,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				toggle_follow()
 			KEY_H:
 				call_brother()
+			KEY_J:
+				hud.toggle_jobs()
+			KEY_F1:
+				hud.toggle_help()
 			KEY_Q:
 				cam.rotate_step(-1)
 			KEY_R:
@@ -374,7 +433,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_G:
 				gfx.cycle()
 			KEY_ESCAPE:
-				get_tree().quit()
+				if hud.help_visible():
+					hud.toggle_help()
+				else:
+					get_tree().quit()
 	elif event is InputEventMouseButton and event.pressed:
 		match event.button_index:
 			MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT:
@@ -392,7 +454,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _process(delta: float) -> void:
 	minute += delta * MINUTES_PER_SECOND
-	_clock.text = "%02d:%02d   %s     $%d" % [int(minute) / 60 % 24, int(minute) % 60, current.room(), cash]
+	hud.set_status("%02d:%02d" % [int(minute) / 60 % 24, int(minute) % 60], current.room(), cash)
 	if not _nav_ok:
 		_nav_ok = house.nav_ready()
 		if not _nav_ok:
@@ -411,7 +473,13 @@ func _process(delta: float) -> void:
 	_update_follow(delta)
 	_update_auto_work(delta)
 	_update_prompt()
+	cam.floor_y = House.UP if House.level_of(current.global_position + Vector3(0, 0.6, 0)) == 1 else 0.0
 	house.update_cutaway(current.global_position, cam.toward_camera(), delta)
+	for a in [nico, tomas] + residents:      # people upstairs vanish with the upper floor
+		a.visible = House.level_of(a.global_position + Vector3(0, 0.6, 0)) <= house.level_shown
+	if _board_dirty:
+		_board_dirty = false
+		_refresh_board()
 
 func _update_carry(delta: float) -> void:
 	if _carry == null:
@@ -419,14 +487,14 @@ func _update_carry(delta: float) -> void:
 	var lead := _carry.lead()
 	var fwd := lead.forward()
 	if _carry.carriers.size() == 1:
-		_carry.global_position = lead.global_position + fwd * 0.8 + Vector3(0, 0.05, 0)   # dragged along the floor
+		_carry.global_position = lead.global_position + fwd * (0.45 + _carry.size.z / 2.0) + Vector3(0, 0.02, 0)   # pushed along the floor
 		if lead.is_moving():
 			_noise_timer -= delta
 			if _noise_timer <= 0.0:
 				_noise_timer = 0.8
 				make_noise(_carry.global_position, DRAG_NOISE, "something heavy being dragged")
 	else:
-		_carry.global_position = (lead.global_position + _carry.carriers[1].global_position) * 0.5 + Vector3(0, 0.35, 0)
+		_carry.global_position = (lead.global_position + _carry.carriers[1].global_position) * 0.5 + Vector3(0, 0.45, 0)
 	_carry.rotation.y = lead.model.rotation.y
 
 func _update_follow(delta: float) -> void:
@@ -440,42 +508,77 @@ func _update_follow(delta: float) -> void:
 	elif o.is_going():
 		o.stop()
 
+## The other brother working alone: the job's hotspots get done one by one over AUTO_SECONDS, with the
+## right clip and tool for each step.
 func _update_auto_work(delta: float) -> void:
 	var job := _auto_job
 	if job == null:
 		return
 	var w := _auto_worker()
 	if job.done:
-		_auto_job = null
+		_stop_auto()
 		return
 	if w.is_going() or w.global_position.distance_to(job.station) > 1.4:
 		return
-	w.face(job.station + Vector3(1, 0, 0))
+	var units := []
+	for s in job.steps.size():
+		for i in site.spots(job.id, s).size():
+			units.append([s, i])
 	job.progress += delta / AUTO_SECONDS
-	_refresh_board()
+	var due := mini(units.size(), int(job.progress * units.size()))
+	while _auto_units < due:
+		var u: Array = units[_auto_units]
+		site.apply(job.id, u[0], u[1], 1.0)
+		_auto_units += 1
+	var cur: Array = units[mini(_auto_units, units.size() - 1)]
+	var spot: Vector3 = site.spots(job.id, cur[0])[cur[1]]
+	var tool: String = job.steps[cur[0]].tool
+	w.face(spot)
+	w.work(Worksite.anim_for(tool, spot.y - w.global_position.y), tool)
+	_board_dirty = _board_dirty or Engine.get_process_frames() % 20 == 0
 	if job.progress >= 1.0:
-		_auto_job = null
+		_stop_auto()
 		complete_job(job)
 		_dialogue.bark(w.display_name, "Done with that one.", 1.5)
 
 func _update_prompt() -> void:
-	var text := ""
-	if day_over or (_minigame and _minigame.is_active()):
-		text = ""
+	if day_over or install.is_active():
+		hud.set_prompt("", "")
 	elif _carry != null:
-		text = "E: put down the %s" % _carry.label.to_lower()
+		hud.set_prompt("E", "Put down the %s" % _carry.label)
 	else:
 		var job := _nearest_job()
 		var load := _nearest_load()
 		if load != null:
-			var pair := other().global_position.distance_to(current.global_position) < 3.0 and not other().busy
-			text = "E: lift the %s %s" % [load.label.to_lower(), "together" if pair else "alone (slow and loud; H calls %s)" % other().display_name]
+			if _pair_ready():
+				hud.set_prompt("E", "Lift the %s together" % load.label)
+			else:
+				hud.set_prompt("E", "Lift the %s alone  (slow and loud;  H calls %s)" % [load.label, other().display_name])
 		elif job != null:
-			text = "E: %s%s" % [job.title.to_lower(), "  (needs %s to hold)" % other().display_name if job.needs_two else ""]
-	_prompt.text = text
+			hud.set_prompt("E", job.title + ("  (needs %s to hold)" % other().display_name if job.needs_two else ""))
+		else:
+			hud.set_prompt("", "")
+
+func _refresh_board() -> void:
+	var o := other()
+	var doing := "Following you" if follow else "Waiting"
+	if _auto_job != null:
+		doing = "Working: " + _auto_job.title.to_lower()
+	elif o.busy:
+		doing = "Holding"
+	elif o.lead != null:
+		doing = "Carrying"
+	hud.set_jobs(jobs, o.display_name, _auto_job)
+	hud.set_brothers(current.display_name, o.display_name, doing, follow)
 
 func _down(a: Key, b: Key) -> bool:
 	return Input.is_physical_key_pressed(a) or Input.is_physical_key_pressed(b)
+
+func _show_hint_once(key: String, again := false) -> void:
+	if _hints_shown.has(key) and not again:
+		return
+	_hints_shown[key] = true
+	hud.toast(Day1.HINTS[key])
 
 # ---------------------------------------------------------------- story
 
@@ -494,132 +597,13 @@ func _end_day() -> void:
 	linda.go_to(current.global_position + Vector3(1.2, 0, 0))
 	await get_tree().create_timer(1.5).timeout
 	await _dialogue.play(Day1.PAY_LINES)
-	var seen := PackedStringArray()
+	var seen := []
 	for r in residents:
-		for n in r.noticed:
-			seen.append("%s: %s" % [r.display_name, n])
-	var text := "DAY 1 DONE\n\nCash from Linda: $%d\n\n" % cash
-	if seen.is_empty():
-		text += "Nobody noticed anything unusual. Good, quiet work."
-	else:
-		text += "What the family noticed today:\n  " + "\n  ".join(seen)
-		text += "\n\nNoise is remembered. Tomorrow, carry heavy things together."
-	text += "\n\nR: play day 1 again      (day 2 comes in the next milestone)"
-	_end.text = text
-	_end.visible = true
-
-# ---------------------------------------------------------------- UI
-
-func _label(size: int, halign: HorizontalAlignment, valign: VerticalAlignment) -> Label:
-	var l := Label.new()
-	var s := LabelSettings.new()
-	s.font_size = size
-	s.outline_size = maxi(4, size / 6)
-	s.outline_color = Color(0, 0, 0, 0.85)
-	l.label_settings = s
-	l.horizontal_alignment = halign
-	l.vertical_alignment = valign
-	l.set_anchors_preset(Control.PRESET_FULL_RECT)
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return l
-
-func _build_ui() -> void:
-	var layer := CanvasLayer.new()
-	add_child(layer)
-	_clock = _label(24, HORIZONTAL_ALIGNMENT_LEFT, VERTICAL_ALIGNMENT_TOP)
-	_clock.offset_left = 20
-	_clock.offset_top = 14
-	layer.add_child(_clock)
-	_who = _label(24, HORIZONTAL_ALIGNMENT_RIGHT, VERTICAL_ALIGNMENT_TOP)
-	_who.offset_right = -20
-	_who.offset_top = 14
-	layer.add_child(_who)
-	var help := _label(15, HORIZONTAL_ALIGNMENT_CENTER, VERTICAL_ALIGNMENT_BOTTOM)
-	help.offset_bottom = -8
-	help.modulate.a = 0.8
-	help.text = "Click/WASD move   E use   Tab switch brother   Right click send him   F follow/stay   H call him   Q/R rotate   Wheel zoom   G graphics"
-	layer.add_child(help)
-	_prompt = _label(22, HORIZONTAL_ALIGNMENT_CENTER, VERTICAL_ALIGNMENT_BOTTOM)
-	_prompt.offset_bottom = -34
-	_prompt.label_settings.font_color = Color(1, 0.9, 0.55)
-	layer.add_child(_prompt)
-	_hint = _label(18, HORIZONTAL_ALIGNMENT_CENTER, VERTICAL_ALIGNMENT_TOP)
-	_hint.offset_top = 60
-	_hint.offset_left = 520      # right of the job board
-	_hint.offset_right = -40
-	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_hint.modulate.a = 0.0
-	layer.add_child(_hint)
-
-	var panel := PanelContainer.new()
-	panel.position = Vector2(16, 52)
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.04, 0.05, 0.07, 0.72)
-	style.set_corner_radius_all(6)
-	style.set_content_margin_all(10)
-	panel.add_theme_stylebox_override("panel", style)
-	layer.add_child(panel)
-	_board = VBoxContainer.new()
-	panel.add_child(_board)
-
-	_minigame = Minigame.new()
-	layer.add_child(_minigame)
-	_minigame.finished.connect(_on_minigame_finished)
-	_minigame.cancelled.connect(_release_mg)
-	_minigame.missed.connect(func(): make_noise(current.global_position, BANG_NOISE, "a loud bang"))
-	_dialogue = Dialogue.new()
-	layer.add_child(_dialogue)
-
-	_end = _label(22, HORIZONTAL_ALIGNMENT_CENTER, VERTICAL_ALIGNMENT_CENTER)
-	_end.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	var dim := StyleBoxFlat.new()
-	dim.bg_color = Color(0, 0, 0, 0.78)
-	_end.add_theme_stylebox_override("normal", dim)
-	_end.visible = false
-	layer.add_child(_end)
-
-func _refresh_board() -> void:
-	if _board == null:
-		return
-	for c in _board.get_children():
-		c.queue_free()
-	var head := Label.new()
-	head.text = "JOB BOARD  (living room + kitchen)"
-	head.add_theme_color_override("font_color", Color(1, 0.85, 0.5))
-	_board.add_child(head)
-	for job in jobs.values():
-		var row := HBoxContainer.new()
-		var l := Label.new()
-		var mark := "[x]" if job.done else ("[%d%%]" % int(job.progress * 100) if job.progress > 0 else "[ ]")
-		l.text = "%s %s" % [mark, job.title]
-		l.custom_minimum_size.x = 330
-		if job.done:
-			l.modulate = Color(0.6, 0.9, 0.6)
-		elif not job.available(jobs):
-			l.modulate = Color(0.6, 0.6, 0.6)
-		row.add_child(l)
-		if not job.done and job.carry == null:
-			var b := Button.new()
-			b.text = "Send %s" % other().display_name
-			b.focus_mode = Control.FOCUS_NONE
-			b.pressed.connect(send_to_job.bind(job))
-			row.add_child(b)
-		_board.add_child(row)
-
-func _set_hint(text: String) -> void:
-	if _hint == null:
-		return
-	_hint.text = text
-	_hint.modulate.a = 1.0
-	var t := create_tween()
-	t.tween_interval(5.0)
-	t.tween_property(_hint, "modulate:a", 0.0, 0.8)
-
-func _show_hint_once(key: String, again := false) -> void:
-	if _hints_shown.has(key) and not again:
-		return
-	_hints_shown[key] = true
-	_set_hint(Day1.HINTS[key])
+		for line in Npc.summarize(r.noticed):
+			seen.append([r.display_name, line])
+	hud.show_end("Day 1 done", cash, seen,
+		"Noise is remembered. Tomorrow, carry heavy things together." if not seen.is_empty() else "Good, quiet work.",
+		[["R", "Play day 1 again"], ["Esc", "Quit"]])
 
 # ---------------------------------------------------------------- self-test
 
@@ -635,11 +619,65 @@ func _walk(a: Actor, p: Vector3) -> bool:
 	await get_tree().physics_frame
 	return await _wait_arrival(a, 60.0)
 
+func _wait_game(seconds: float) -> void:
+	var waited := 0.0
+	while waited < seconds:
+		await get_tree().physics_frame
+		waited += get_physics_process_delta_time()
+
 func _heard_count() -> int:
 	var n := 0
 	for r in residents:
 		n += r.noticed.size()
 	return n
+
+func _key(code: Key, down: bool) -> void:
+	var e := InputEventKey.new()
+	e.physical_keycode = code
+	e.keycode = code
+	e.pressed = down
+	Input.parse_input_event(e)
+
+## Plays one job in the install view the way a player does: wrong tool first, then the right one, every
+## hotspot, held steps with E down.
+func _play_install(job: Job) -> String:
+	while install.is_active():
+		var s := install.current()
+		var step := install.step
+		if install.selected == "":
+			install.select("hammer" if s.tool != "hammer" else "tape")
+			if s.kind == "hold":
+				_key(KEY_E, true)
+			else:
+				install.use_spot(0)
+			for f in 3:                                   # the held key must be seen by a frame or two
+				await get_tree().process_frame
+			_key(KEY_E, false)
+			if not install.message_bad:
+				return "a wrong tool was not refused (%s step %d)" % [job.id, step]
+		install.select(s.tool)
+		if s.kind == "hold":
+			_key(KEY_E, true)
+			var waited := 0.0
+			while install.is_active() and install.step == step and waited < 20.0:
+				await get_tree().physics_frame
+				waited += get_physics_process_delta_time()
+			_key(KEY_E, false)
+		else:
+			if s.kind == "order" and install.progress().y > 1:
+				install.use_spot(1)                       # out of order: a mistake, nothing connects
+				if install.progress().x != 0:
+					return "wiring accepted the wrong order"
+			for i in install.progress().y:
+				install.use_spot(i)
+				var t := 0.0
+				while install.is_active() and install.step == step and install.progress().x <= i and t < 10.0:
+					await get_tree().physics_frame
+					t += get_physics_process_delta_time()
+		if install.is_active() and install.step == step:
+			return "step %d of %s did not finish (%s, %s)" % [step, job.id, install.progress(), install.message]
+		install.selected = ""
+	return ""
 
 func _run_selftest() -> void:
 	while not _nav_ok:
@@ -652,7 +690,9 @@ func _run_selftest() -> void:
 	await _walk(nico, jobs.dishwasher_in.carry.global_position + Vector3(-1.0, 0, 0))
 	interact()
 	if _carry == null or _carry.carriers.size() != 1:
-		return _fail("could not lift the dishwasher alone (nico %s, box %s, hit %s %s)" % [nico.global_position, jobs.dishwasher_in.carry.global_position, nico.get_last_slide_collision().get_collider().get_parent().name if nico.get_last_slide_collision() else "none", nico.get_last_slide_collision().get_collider().position if nico.get_last_slide_collision() else ""])
+		return _fail("could not lift the dishwasher alone (nico %s, box %s)" % [nico.global_position, jobs.dishwasher_in.carry.global_position])
+	if nico.carrying != "solo":
+		return _fail("solo carry clip not set")
 	await _walk(nico, Day1.DISHWASHER_TARGET + Vector3(0, 0, 1.1))
 	interact()
 	if not jobs.dishwasher_in.done:
@@ -670,34 +710,44 @@ func _run_selftest() -> void:
 	var heard := _heard_count()
 	interact()
 	if _carry == null or _carry.carriers.size() != 2:
-		return _fail("could not lift the couch together (Tomas %.1f m away at %s, going=%s, nico %s next=%s target=%s vel=%s busy=%s lead=%s mul=%s)" % [tomas.global_position.distance_to(nico.global_position), tomas.global_position, tomas.is_going(), nico.global_position, nico.agent.get_next_path_position(), nico.agent.target_position, nico.velocity, nico.busy, nico.lead, nico.speed_mul])
+		return _fail("could not lift the couch together (Tomas %.1f m away)" % tomas.global_position.distance_to(nico.global_position))
+	if tomas.carrying != "pair":
+		return _fail("pair carry clip not set")
 	await _walk(nico, Day1.COUCH_TARGET + Vector3(0, 0, 1.2))
 	interact()
 	if not jobs.couch_in.done:
-		return _fail("couch not delivered (it is at %s)" % jobs.couch_in.carry.global_position)
+		return _fail("couch not delivered (it is at %s, Nico %s, Tomas %s, next %s)" % [jobs.couch_in.carry.global_position, nico.global_position, tomas.global_position, nico.agent.get_next_path_position()])
 	if _heard_count() != heard:
 		return _fail("the pair carry made noise")
 
-	# 3. Tomas lays the floor on his own while Nico does the rest
+	# 3. Tomas lays the floor on his own while Nico does the rest; wiring is played like a player would
 	send_to_job(jobs.flooring)
-	for id in ["studs", "drywall", "wiring", "dishwasher", "assemble"]:
+	for id in ["studs", "wiring", "drywall", "dishwasher", "assemble", "measure"]:
 		var job: Job = jobs[id]
 		if job.needs_two:
 			while not jobs.flooring.done:                # he finishes the floor first
 				await get_tree().physics_frame
 			send_to_job(job)
 			await _wait_arrival(tomas, 40.0)
-		await _walk(nico, job.station)
+		if not await _walk(nico, job.station):
+			return _fail("Nico could not reach %s at %s (stuck at %s)" % [id, job.station, nico.global_position])
 		interact()
-		if not _minigame.is_active():
+		if not install.is_active():
 			return _fail("job %s did not start (Nico at %s)" % [id, nico.global_position])
-		await get_tree().create_timer(3.0).timeout      # let the minigame show (screen captures)
-		_minigame.auto_solve()
+		if id == "wiring" or id == "drywall":
+			var err: String = await _play_install(job)
+			if err != "":
+				return _fail(err)
+		else:
+			await _wait_game(2.0)                       # let the install view show (screen captures)
+			install.auto_solve()
 		if not job.done:
 			return _fail("job %s not done" % id)
-	while not jobs.flooring.done:
-		await get_tree().physics_frame
-	while not _end.visible:
+		if id == "drywall" and not site._sheets.all(func(s): return s.visible):
+			return _fail("drywall sheets not on the wall")
+	if not jobs.flooring.done:
+		await _wait_game(AUTO_SECONDS)
+	while not hud.end_visible():
 		await get_tree().process_frame
 	var total := 0
 	for job in jobs.values():

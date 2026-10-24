@@ -1,12 +1,12 @@
 class_name Job
 extends RefCounted
-## One task on the job board. Done by a brother through a minigame (steps), by the other brother on his
+## One task on the job list. Done by a brother in the install view (steps), by the other brother on his
 ## own (auto work, slower), or, for carry jobs, by bringing an object to a spot.
 
 var id := ""
 var title := ""
 var station := Vector3.ZERO        # where you stand to do it
-var steps: Array = []              # minigame steps, see Minigame
+var steps: Array = []              # install steps, see Day1 and Install
 var needs_two := false             # the other brother must stand at the station (holding)
 var requires: Array = []           # ids of jobs that must be done first
 var pay := 60
@@ -28,6 +28,6 @@ func available(jobs: Dictionary) -> bool:
 			return false
 	return true
 
-## The other brother can do it alone (no minigame needed, takes longer).
+## The other brother can do it alone (no install view, takes longer).
 func solo_ok() -> bool:
 	return not needs_two and carry == null

@@ -1,0 +1,566 @@
+class_name Hud
+extends CanvasLayer
+## Everything on screen over the house, in one consistent style (UiTheme):
+##   top left    status pill (clock, room, cash) and today's job list (J folds it)
+##   top right   the two brothers: who you play, what the other one is doing, his orders
+##   top centre  short tips (toasts)
+##   bottom      the one action you can take now, as a key cap and a verb; dialogue above it
+##   install     the step card (top centre) and the tool bag (bottom) while working on a job
+## Controls are listed on F1 instead of always on screen.
+
+signal send_job(job: Job)
+signal switch_brother
+signal toggle_follow
+signal call_brother
+signal tool_picked(id: String)
+
+const ICONS := "res://assets/icons/%s.png"
+
+var _clock: Label
+var _room: Label
+var _cash: Label
+var _jobs_panel: PanelContainer
+var _jobs_box: VBoxContainer
+var _jobs_count: Label
+var _jobs_open := true
+var _cards := {}                        # brother name -> {panel, role}
+var _orders: HBoxContainer
+var _follow_btn: Button
+var _prompt: PanelContainer
+var _prompt_key: PanelContainer
+var _prompt_text: Label
+var _toast: PanelContainer
+var _toast_text: Label
+var _toast_tween: Tween
+var _help: PanelContainer
+var _end: PanelContainer
+var _end_body: VBoxContainer
+var _step_card: PanelContainer
+var _step_title: Label
+var _step_dots: HBoxContainer
+var _step_text: Label
+var _step_progress: ProgressBar
+var _step_msg: Label
+var _tray: PanelContainer
+var _tray_box: HBoxContainer
+var _tray_ids: Array = []
+var _root: Control
+
+func _ready() -> void:
+	_root = Control.new()
+	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.theme = UiTheme.build()
+	add_child(_root)
+	_build_status()
+	_build_jobs()
+	_build_brothers()
+	_build_prompt()
+	_build_toast()
+	_build_help()
+	_build_install()
+	_build_end()
+
+func theme_root() -> Control:
+	return _root
+
+# ---------------------------------------------------------------- status and jobs
+
+func _build_status() -> void:
+	var pill := PanelContainer.new()
+	pill.add_theme_stylebox_override("panel", _pill_style())
+	pill.position = Vector2(16, 16)
+	_root.add_child(pill)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	pill.add_child(row)
+	_clock = UiTheme.label("08:00", UiTheme.TITLE)
+	row.add_child(_clock)
+	_room = UiTheme.label("", UiTheme.BODY, UiTheme.MUTED)
+	_room.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(_room)
+	_cash = UiTheme.label("$0", UiTheme.TITLE, UiTheme.OK)
+	row.add_child(_cash)
+
+func _pill_style() -> StyleBoxFlat:
+	var s := UiTheme.panel(UiTheme.BG, 22, 8)
+	s.content_margin_left = 16
+	s.content_margin_right = 16
+	return s
+
+func set_status(clock: String, room: String, cash: int) -> void:
+	_clock.text = clock
+	_room.text = room
+	_cash.text = "$%d" % cash
+
+func _build_jobs() -> void:
+	_jobs_panel = PanelContainer.new()
+	_jobs_panel.position = Vector2(16, 68)
+	_jobs_panel.custom_minimum_size = Vector2(330, 0)
+	_root.add_child(_jobs_panel)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 6)
+	_jobs_panel.add_child(v)
+	var head := HBoxContainer.new()
+	v.add_child(head)
+	var title := UiTheme.label("Today's jobs", UiTheme.TITLE, UiTheme.ACCENT)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(title)
+	_jobs_count = UiTheme.label("", UiTheme.BODY, UiTheme.MUTED)
+	_jobs_count.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	head.add_child(_jobs_count)
+	var fold := UiTheme.keycap("J")
+	fold.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	head.add_child(fold)
+	_jobs_box = VBoxContainer.new()
+	_jobs_box.add_theme_constant_override("separation", 4)
+	v.add_child(_jobs_box)
+
+func toggle_jobs() -> void:
+	_jobs_open = not _jobs_open
+	_jobs_box.visible = _jobs_open
+
+## Rebuilds the list. `helper` is the brother you can send; `auto` is the job he is doing on his own.
+func set_jobs(jobs: Dictionary, helper: String, auto: Job) -> void:
+	for c in _jobs_box.get_children():
+		c.queue_free()
+	var done := 0
+	for job in jobs.values():
+		if job.done:
+			done += 1
+	_jobs_count.text = "%d / %d" % [done, jobs.size()]
+	# open jobs first, then the ones waiting on another job, then the finished ones
+	var order: Array = jobs.values().filter(func(j): return not j.done and j.available(jobs))
+	order += jobs.values().filter(func(j): return not j.done and not j.available(jobs))
+	for job in order:
+		_jobs_box.add_child(_job_row(job, jobs, helper, auto))
+	if done > 0:                           # finished jobs fold into one line, the list stays short
+		var earned := 0
+		for job in jobs.values():
+			if job.done:
+				earned += job.pay
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		var pad := MarginContainer.new()
+		pad.add_theme_constant_override("margin_left", 6)
+		pad.add_child(UiTheme.dot(UiTheme.OK, 10))
+		row.add_child(pad)
+		row.add_child(UiTheme.label("%d done  ·  $%d earned" % [done, earned], UiTheme.CAPTION, UiTheme.MUTED))
+		_jobs_box.add_child(row)
+
+func _job_row(job: Job, jobs: Dictionary, helper: String, auto: Job) -> Control:
+	var row := PanelContainer.new()
+	var idle := UiTheme.panel(Color(0, 0, 0, 0), 8, 6)
+	var hot := UiTheme.panel(UiTheme.BG_SOFT, 8, 6)
+	row.add_theme_stylebox_override("panel", idle)
+	row.mouse_filter = Control.MOUSE_FILTER_PASS
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 10)
+	row.add_child(h)
+	var locked := not job.done and not job.available(jobs)
+	var mark_color := UiTheme.OK if job.done else (UiTheme.MUTED.darkened(0.3) if locked else UiTheme.ACCENT)
+	h.add_child(UiTheme.dot(mark_color, 10))
+	var texts := VBoxContainer.new()
+	texts.add_theme_constant_override("separation", 0)
+	texts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(texts)
+	var title := UiTheme.label(job.title, UiTheme.BODY, UiTheme.MUTED if job.done or locked else UiTheme.TEXT)
+	texts.add_child(title)
+	var sub := ""
+	if job.done:
+		sub = "Done  +$%d" % job.pay
+	elif locked:
+		sub = "After: " + ", ".join(job.requires.map(func(r): return (jobs[r] as Job).title.to_lower()))
+	elif job == auto:
+		sub = "%s is on it" % helper
+	elif job.needs_two:
+		sub = "Needs both of you  ·  $%d" % job.pay
+	elif job.carry != null:
+		sub = "Heavy: carry it together  ·  $%d" % job.pay
+	else:
+		sub = "$%d" % job.pay
+	if sub != "":
+		texts.add_child(UiTheme.label(sub, UiTheme.CAPTION, UiTheme.MUTED))
+	if job == auto and job.progress > 0.0:
+		var bar := ProgressBar.new()
+		bar.show_percentage = false
+		bar.custom_minimum_size = Vector2(0, 4)
+		bar.value = job.progress * 100.0
+		texts.add_child(bar)
+	if not job.done and not locked and job.carry == null and job != auto:
+		var send := Button.new()
+		send.text = "Send %s" % helper
+		send.add_theme_font_size_override("font_size", UiTheme.CAPTION)
+		send.add_theme_color_override("font_color", UiTheme.person_color(helper))
+		send.focus_mode = Control.FOCUS_NONE
+		send.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		send.pressed.connect(func(): send_job.emit(job))
+		send.modulate.a = 0.0               # shown on hover: one action per row, not a column of buttons
+		h.add_child(send)
+		row.mouse_entered.connect(func():
+			row.add_theme_stylebox_override("panel", hot)
+			send.modulate.a = 1.0)
+		row.mouse_exited.connect(func():
+			if not row.get_global_rect().has_point(row.get_global_mouse_position()):
+				row.add_theme_stylebox_override("panel", idle)
+				send.modulate.a = 0.0)
+	return row
+
+# ---------------------------------------------------------------- the brothers
+
+func _build_brothers() -> void:
+	var v := VBoxContainer.new()
+	v.anchor_left = 1.0
+	v.anchor_right = 1.0
+	v.offset_left = -300
+	v.offset_right = -16
+	v.offset_top = 16
+	v.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	v.add_theme_constant_override("separation", 6)
+	_root.add_child(v)
+	var cards := HBoxContainer.new()
+	cards.alignment = BoxContainer.ALIGNMENT_END
+	v.add_child(cards)
+	for who in ["Nico", "Tomas"]:
+		var card := PanelContainer.new()
+		card.mouse_filter = Control.MOUSE_FILTER_STOP
+		card.custom_minimum_size = Vector2(136, 0)
+		card.gui_input.connect(func(e):
+			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+				switch_brother.emit())
+		var h := HBoxContainer.new()
+		card.add_child(h)
+		h.add_child(UiTheme.dot(UiTheme.person_color(who), 14))
+		var t := VBoxContainer.new()
+		t.add_theme_constant_override("separation", 0)
+		h.add_child(t)
+		t.add_child(UiTheme.label(who, UiTheme.BODY))
+		var role := UiTheme.label("", UiTheme.CAPTION, UiTheme.MUTED)
+		t.add_child(role)
+		cards.add_child(card)
+		_cards[who] = {"panel": card, "role": role}
+	_orders = HBoxContainer.new()
+	_orders.alignment = BoxContainer.ALIGNMENT_END
+	v.add_child(_orders)
+	_follow_btn = _order_button("F", "Follow me", func(): toggle_follow.emit())
+	_orders.add_child(_follow_btn)
+	_orders.add_child(_order_button("H", "Come here", func(): call_brother.emit()))
+	var tab := UiTheme.key_hint("Tab", "switch", UiTheme.CAPTION)
+	tab.modulate.a = 0.75
+	tab.alignment = BoxContainer.ALIGNMENT_END
+	v.add_child(tab)
+
+func _order_button(key: String, text: String, on: Callable) -> Button:
+	var b := Button.new()
+	b.text = "%s   %s" % [key, text]
+	b.add_theme_font_size_override("font_size", UiTheme.CAPTION)
+	b.focus_mode = Control.FOCUS_NONE
+	b.pressed.connect(on)
+	return b
+
+func set_brothers(you: String, other: String, other_doing: String, following: bool) -> void:
+	for who in _cards:
+		var c: Dictionary = _cards[who]
+		var mine: bool = who == you
+		var s := UiTheme.panel(UiTheme.BG if mine else Color(0.07, 0.08, 0.1, 0.6), UiTheme.RADIUS, 8,
+			UiTheme.person_color(who) if mine else Color(0, 0, 0, 0))
+		(c.panel as PanelContainer).add_theme_stylebox_override("panel", s)
+		(c.role as Label).text = "You" if mine else other_doing
+	_follow_btn.text = "F   %s" % ("Wait here" if following else "Follow me")
+	for b in _orders.get_children():
+		(b as Button).add_theme_color_override("font_color", UiTheme.person_color(other))
+
+# ---------------------------------------------------------------- prompt, tips, help
+
+func _build_prompt() -> void:
+	_prompt = PanelContainer.new()
+	_prompt.add_theme_stylebox_override("panel", _pill_style())
+	_prompt.anchor_left = 0.5
+	_prompt.anchor_right = 0.5
+	_prompt.anchor_top = 1.0
+	_prompt.anchor_bottom = 1.0
+	_prompt.offset_top = -64
+	_prompt.offset_bottom = -24
+	_prompt.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_prompt.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_prompt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_prompt)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 10)
+	_prompt.add_child(h)
+	_prompt_key = UiTheme.keycap("E")
+	_prompt_key.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(_prompt_key)
+	_prompt_text = UiTheme.label("", UiTheme.BODY)
+	h.add_child(_prompt_text)
+	_prompt.visible = false
+
+## The one thing you can do right now ("" hides it).
+func set_prompt(key: String, text: String) -> void:
+	_prompt.visible = text != ""
+	if text == "" or (_prompt_text.text == text and (_prompt_key.get_child(0) as Label).text == key):
+		return
+	(_prompt_key.get_child(0) as Label).text = key
+	_prompt_text.text = text
+	_prompt.reset_size()               # centred anchors growing both ways keep it in the middle
+
+func _build_toast() -> void:
+	_toast = PanelContainer.new()
+	var s := UiTheme.panel(UiTheme.BG, UiTheme.RADIUS, 12)
+	s.border_width_left = 4
+	s.border_color = UiTheme.ACCENT
+	_toast.add_theme_stylebox_override("panel", s)
+	_toast.anchor_left = 0.5
+	_toast.anchor_right = 0.5
+	_toast.offset_left = -270
+	_toast.offset_right = 270
+	_toast.offset_top = 16
+	_toast.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_toast)
+	_toast_text = UiTheme.label("", UiTheme.BODY)
+	_toast_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_toast_text.custom_minimum_size.x = 512     # a wrapping label has no width of its own
+	_toast.add_child(_toast_text)
+	_toast.modulate.a = 0.0
+
+func toast(text: String, seconds := 6.0) -> void:
+	_toast_text.text = text
+	_toast.reset_size()
+	if _toast_tween:
+		_toast_tween.kill()
+	_toast.modulate.a = 1.0
+	_toast_tween = create_tween()
+	_toast_tween.tween_interval(seconds)
+	_toast_tween.tween_property(_toast, "modulate:a", 0.0, 0.6)
+
+func _build_help() -> void:
+	var chip := UiTheme.key_hint("F1", "Controls", UiTheme.CAPTION)
+	chip.anchor_top = 1.0
+	chip.anchor_bottom = 1.0
+	chip.offset_top = -30
+	chip.offset_left = 16
+	chip.modulate.a = 0.7
+	_root.add_child(chip)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(center)
+	_help = PanelContainer.new()
+	center.add_child(_help)
+	var v := VBoxContainer.new()
+	_help.add_child(v)
+	v.add_child(UiTheme.label("Controls", UiTheme.TITLE, UiTheme.ACCENT))
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 32)
+	grid.add_theme_constant_override("v_separation", 8)
+	v.add_child(grid)
+	for k in [["Click / WASD", "walk"], ["Shift", "run"], ["E", "use, lift, put down"], ["Tab", "switch brother"],
+			["Right click", "send the other one there"], ["F", "he follows / waits"], ["H", "call him over"],
+			["J", "fold the job list"], ["Q / R", "turn the view"], ["Wheel", "zoom"], ["1-9", "pick a tool"],
+			["Esc", "stop working / quit"], ["G", "graphics quality"], ["F1", "this help"]]:
+		grid.add_child(UiTheme.key_hint(k[0], k[1]))
+	_help.visible = false
+
+func toggle_help() -> void:
+	_help.visible = not _help.visible
+
+func help_visible() -> bool:
+	return _help.visible
+
+# ---------------------------------------------------------------- install view
+
+func _build_install() -> void:
+	_step_card = PanelContainer.new()
+	_step_card.anchor_left = 0.5
+	_step_card.anchor_right = 0.5
+	_step_card.offset_left = -300
+	_step_card.offset_right = 300
+	_step_card.offset_top = 16
+	_step_card.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_step_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(_step_card)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 6)
+	_step_card.add_child(v)
+	var head := HBoxContainer.new()
+	v.add_child(head)
+	_step_title = UiTheme.label("", UiTheme.TITLE, UiTheme.ACCENT)
+	_step_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(_step_title)
+	_step_dots = HBoxContainer.new()
+	_step_dots.add_theme_constant_override("separation", 5)
+	head.add_child(_step_dots)
+	_step_text = UiTheme.label("", UiTheme.BODY)
+	_step_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_step_text.custom_minimum_size.x = 560
+	v.add_child(_step_text)
+	_step_progress = ProgressBar.new()
+	_step_progress.show_percentage = false
+	_step_progress.custom_minimum_size = Vector2(0, 6)
+	v.add_child(_step_progress)
+	_step_msg = UiTheme.label("", UiTheme.CAPTION, UiTheme.DANGER)
+	_step_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_step_msg.custom_minimum_size.x = 560
+	v.add_child(_step_msg)
+	var keys := HBoxContainer.new()
+	keys.add_theme_constant_override("separation", 16)
+	keys.modulate.a = 0.75
+	for k in [["1-9", "tool"], ["Click", "work"], ["Wheel", "zoom"], ["Esc", "stop"]]:
+		keys.add_child(UiTheme.key_hint(k[0], k[1], UiTheme.CAPTION))
+	v.add_child(keys)
+
+	_tray = PanelContainer.new()
+	_tray.anchor_left = 0.5
+	_tray.anchor_right = 0.5
+	_tray.anchor_top = 1.0
+	_tray.anchor_bottom = 1.0
+	_tray.offset_top = -136                 # room for key, icon and name; grows upward if taller
+	_tray.offset_bottom = -16
+	_tray.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_tray.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_root.add_child(_tray)
+	_tray_box = HBoxContainer.new()
+	_tray_box.add_theme_constant_override("separation", 8)
+	_tray.add_child(_tray_box)
+	_step_card.visible = false
+	_tray.visible = false
+
+## Redraws the step card and the tool bag from the install state.
+func show_install(ins: Install) -> void:
+	var on := ins.is_active()
+	_step_card.visible = on
+	_tray.visible = on
+	_jobs_panel.visible = not on
+	_toast.offset_top = 196 if on else 16     # under the step card while working
+	if not on:
+		_tray_ids = []
+		return
+	var s := ins.current()
+	_step_title.text = ins.job.title
+	for c in _step_dots.get_children():
+		_step_dots.remove_child(c)
+		c.queue_free()
+	for k in ins.job.steps.size():
+		var col := UiTheme.OK if k < ins.step else (UiTheme.ACCENT if k == ins.step else UiTheme.MUTED.darkened(0.4))
+		_step_dots.add_child(UiTheme.dot(col, 10))
+	_step_text.text = "Step %d of %d:  %s" % [ins.step + 1, ins.job.steps.size(), s.text]
+	var p := ins.progress()
+	_step_progress.value = (ins.hold_ratio() if s.kind == "hold" else float(p.x) / maxf(1.0, p.y)) * 100.0
+	_step_msg.text = ins.message
+	_step_msg.add_theme_color_override("font_color", UiTheme.DANGER if ins.message_bad else UiTheme.OK)
+	_step_msg.visible = ins.message != ""
+	if _tray_ids != ins.tray:
+		_tray_ids = ins.tray.duplicate()
+		for c in _tray_box.get_children():
+			_tray_box.remove_child(c)       # gone now, not at the end of the frame: the loop below counts them
+			c.queue_free()
+		for k in ins.tray.size():
+			_tray_box.add_child(_tool_slot(ins.tray[k], k + 1))
+		_center.call_deferred(_tray)
+	for k in _tray_box.get_child_count():
+		var slot := _tray_box.get_child(k) as PanelContainer
+		var id: String = ins.tray[k]
+		var border := Color(0, 0, 0, 0)
+		if id == ins.selected:
+			border = UiTheme.ACCENT
+		elif ins.show_tool and id == s.tool:
+			border = UiTheme.OK
+		slot.add_theme_stylebox_override("panel", UiTheme.panel(UiTheme.BG_HOVER if id == ins.selected else UiTheme.BG_SOFT, 8, 6, border))
+
+func _tool_slot(id: String, number: int) -> PanelContainer:
+	var slot := PanelContainer.new()
+	slot.custom_minimum_size = Vector2(84, 0)
+	slot.mouse_filter = Control.MOUSE_FILTER_STOP
+	slot.tooltip_text = Install.EQUIPMENT[id]
+	slot.gui_input.connect(func(e):
+		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+			tool_picked.emit(id))
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 2)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	slot.add_child(v)
+	var top := HBoxContainer.new()
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(top)
+	top.add_child(UiTheme.keycap(str(number)))
+	var icon := TextureRect.new()
+	icon.texture = load(ICONS % id)
+	icon.custom_minimum_size = Vector2(56, 56)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	v.add_child(icon)
+	var name_l := UiTheme.label(Install.EQUIPMENT[id], UiTheme.CAPTION, UiTheme.MUTED)
+	name_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(name_l)
+	return slot
+
+# ---------------------------------------------------------------- end of the day
+
+func _build_end() -> void:
+	var center := CenterContainer.new()       # keeps the card in the middle whatever its size
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(center)
+	_end = PanelContainer.new()
+	_end.custom_minimum_size = Vector2(620, 0)
+	_end.add_theme_stylebox_override("panel", UiTheme.panel(Color(0.05, 0.055, 0.07, 0.95), 14, 28))
+	center.add_child(_end)
+	_end_body = VBoxContainer.new()
+	_end_body.add_theme_constant_override("separation", 12)
+	_end.add_child(_end_body)
+	_end.visible = false
+
+## `seen` is [[who, what], ...]; `actions` is [[key, text], ...].
+func show_end(title: String, cash: int, seen: Array, lesson: String, actions: Array) -> void:
+	for c in _end_body.get_children():
+		c.queue_free()
+	_end_body.add_child(UiTheme.label(title, UiTheme.HEADLINE, UiTheme.ACCENT))
+	var pay := HBoxContainer.new()
+	pay.add_child(UiTheme.label("Cash from Linda", UiTheme.BODY, UiTheme.MUTED))
+	pay.add_child(UiTheme.label("$%d" % cash, UiTheme.TITLE, UiTheme.OK))
+	_end_body.add_child(pay)
+	_end_body.add_child(UiTheme.label("What the family noticed" if not seen.is_empty() else "Nobody noticed anything unusual.", UiTheme.TITLE))
+	for e in seen:
+		var row := HBoxContainer.new()
+		row.add_child(UiTheme.dot(UiTheme.person_color(e[0]), 10))
+		var who := UiTheme.label(e[0], UiTheme.BODY, UiTheme.person_color(e[0]))
+		who.custom_minimum_size.x = 64
+		row.add_child(who)
+		var what := UiTheme.label(e[1], UiTheme.BODY)
+		what.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		what.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(what)
+		_end_body.add_child(row)
+	if lesson != "":
+		var l := UiTheme.label(lesson, UiTheme.BODY, UiTheme.ACCENT)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_end_body.add_child(l)
+	var keys := HBoxContainer.new()
+	keys.add_theme_constant_override("separation", 24)
+	for a in actions:
+		keys.add_child(UiTheme.key_hint(a[0], a[1]))
+	_end_body.add_child(keys)
+	_end.visible = true
+	_jobs_panel.visible = false
+
+## Centres a centre-anchored control on its content size (growing both ways does not re-centre it).
+func _center(c: Control, vertical := false) -> void:
+	var m := c.get_combined_minimum_size()
+	c.offset_left = -m.x / 2.0
+	c.offset_right = m.x / 2.0
+	if vertical:
+		c.offset_top = -m.y / 2.0
+		c.offset_bottom = m.y / 2.0
+	c.reset_size()
+
+func end_visible() -> bool:
+	return _end.visible
+
+## Puts a control (the dialogue) under the HUD theme.
+func add_ui(c: Control) -> void:
+	_root.add_child(c)

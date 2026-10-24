@@ -185,15 +185,13 @@ func _props() -> void:
 	var fabric := _flat(Color(0.35, 0.42, 0.55), 1.0)
 	var porcelain := _flat(Color(0.95, 0.96, 0.97), 0.3)
 
-	# work room: kitchen run along the north wall, the gap for the dishwasher, the new partition (studs only)
+	# work room: kitchen run along the north wall with a gap for the dishwasher (x 4.8..5.4), the new partition (studs only)
 	_static_box(Vector3(3.6, 0.9, 0.62), Vector3(1.95, 0.45, 0.39), counter)
-	_static_box(Vector3(0.6, 0.9, 0.62), Vector3(5.1, 0.45, 0.39), _flat(Color(0.55, 0.45, 0.35)))   # dishwasher gap (box)
 	_static_box(Vector3(0.75, 1.9, 0.7), Vector3(6.0, 0.95, 0.43), _flat(Color(0.8, 0.82, 0.84), 0.4))  # fridge
 	for i in 9:
 		_static_box(Vector3(0.09, 2.6, 0.045), Vector3(6.4, 1.3, 2.4 + i * 0.4), timber, PI / 2)       # studs
 	_static_box(Vector3(0.09, 0.05, 3.3), Vector3(6.4, 0.025, 4.0), timber)                           # bottom plate
 	_static_box(Vector3(1.22, 0.6, 2.44), Vector3(3.0, 0.3, 5.6), board)       # drywall stack
-	_static_box(Vector3(2.1, 0.8, 0.95), Vector3(1.6, 0.4, 2.6), _flat(Color(0.65, 0.55, 0.4)))  # couch, still boxed
 	_static_box(Vector3(0.5, 0.35, 0.3), Vector3(7.8, 0.175, 6.2), dark)        # tool bag
 
 	# garage

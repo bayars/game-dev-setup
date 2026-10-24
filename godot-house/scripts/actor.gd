@@ -16,11 +16,16 @@ var display_name := ""
 var controlled := false
 var steer := Vector2.ZERO      # world xz direction for direct control (WASD); overrides navigation
 var running := false
+var busy := false              # in a minigame or holding something in place: does not move
+var speed_mul := 1.0           # carrying slows you down
+var lead: Actor = null         # pair carrying: walk behind this actor at `lead_gap` metres
+var lead_gap := 1.6
 var model: Node3D
 var agent: NavigationAgent3D
 var _anim: AnimationPlayer
 var _ring: MeshInstance3D
 var _going := false
+var _fresh := 0                # physics frames since go_to; the agent needs a frame to compute a path
 
 func setup(model_scene: PackedScene, who: String, jacket: Color, pants: Color, gfx: Graphics) -> void:
 	display_name = who
@@ -28,7 +33,7 @@ func setup(model_scene: PackedScene, who: String, jacket: Color, pants: Color, g
 	collision_mask = 1       # so nobody gets stuck in a 1.2 m doorway
 	var shape := CollisionShape3D.new()
 	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.28
+	capsule.radius = 0.24
 	capsule.height = 1.75
 	shape.shape = capsule
 	shape.position.y = 0.875
@@ -45,7 +50,8 @@ func setup(model_scene: PackedScene, who: String, jacket: Color, pants: Color, g
 	agent = NavigationAgent3D.new()
 	agent.radius = 0.35
 	agent.height = 1.8
-	agent.path_desired_distance = 0.5
+	agent.path_desired_distance = 0.25  # small: a doorway corner counts as passed only when actually rounded
+	agent.path_height_offset = 0.2       # the baked navmesh sits ~0.2 m above the floor
 	agent.target_desired_distance = 0.45
 	add_child(agent)
 
@@ -86,12 +92,24 @@ func set_controlled(on: bool) -> void:
 func go_to(p: Vector3) -> void:
 	agent.target_position = p
 	_going = true
+	_fresh = 0
 
 func stop() -> void:
 	_going = false
 
 func is_going() -> bool:
 	return _going
+
+## Horizontal facing direction of the model.
+func forward() -> Vector3:
+	return Vector3(sin(model.rotation.y), 0, cos(model.rotation.y))
+
+func face(p: Vector3) -> void:
+	var d := p - global_position
+	model.rotation.y = atan2(d.x, d.z)
+
+func is_moving() -> bool:
+	return Vector2(velocity.x, velocity.z).length() > 0.2
 
 func room() -> String:
 	return House.room_at(global_position)
@@ -118,25 +136,38 @@ func _tint(jacket: Color, pants: Color) -> void:
 
 func _physics_process(delta: float) -> void:
 	var dir := Vector3.ZERO
-	if steer.length() > 0.05:
+	if busy:
+		pass
+	elif lead != null:
+		var spot := lead.global_position - lead.forward() * lead_gap
+		var to_spot := spot - global_position
+		to_spot.y = 0.0
+		if to_spot.length() > 0.08:
+			dir = to_spot.normalized() * minf(1.0, to_spot.length() * 2.0)
+		_going = false
+	elif steer.length() > 0.05:
 		dir = Vector3(steer.x, 0, steer.y).limit_length(1.0)
 		_going = false
 	elif _going:
-		if agent.is_navigation_finished():
+		_fresh += 1
+		if _fresh > 2 and agent.is_navigation_finished():
 			_going = false
 			arrived.emit()
 		else:
 			var to := agent.get_next_path_position() - global_position
 			to.y = 0.0
 			dir = to.normalized()
-	var speed := RUN_SPEED if running else WALK_SPEED
+	var speed := (RUN_SPEED if running and speed_mul >= 1.0 else WALK_SPEED) * speed_mul
 	var want := dir * speed
 	velocity.x = move_toward(velocity.x, want.x, ACCEL * delta * speed)
 	velocity.z = move_toward(velocity.z, want.z, ACCEL * delta * speed)
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta
 	move_and_slide()
 	var planar := Vector2(velocity.x, velocity.z)
-	if planar.length() > 0.2:
+	if lead != null:                  # face the lead and the load between you
+		var d := lead.global_position - global_position
+		model.rotation.y = lerp_angle(model.rotation.y, atan2(d.x, d.z), 10.0 * delta)
+	elif planar.length() > 0.2:
 		model.rotation.y = lerp_angle(model.rotation.y, atan2(planar.x, planar.y), 10.0 * delta)
 	_animate(planar.length())
 
@@ -146,8 +177,9 @@ func _animate(planar: float) -> void:
 	var clip := "idle"
 	var scale := 1.0
 	if planar > 0.15:
-		clip = "run" if running else "walk"
-		scale = planar / (RUN_NATURAL if running else WALK_NATURAL)
+		var run_clip := running and speed_mul >= 1.0
+		clip = "run" if run_clip else "walk"
+		scale = planar / (RUN_NATURAL if run_clip else WALK_NATURAL)
 	if _anim.current_animation != clip:
 		_anim.play(clip, 0.25)
 	_anim.speed_scale = clampf(scale, 0.3, 2.0)

@@ -155,9 +155,9 @@ def combine(b, *terms):
 def grass(b):
     big, mid, fine = b.noise(3, detail=6), b.noise(14, detail=5), b.noise(45, detail=2)
     leaf = b.ramp(combine(b, (stretch(b, mid, 0.3, 0.7), 0.6), (stretch(b, fine, 0.25, 0.75), 0.4)),
-                  [(0.0, "#14290D"), (0.45, "#2C5619"), (0.8, "#4E8226"), (1.0, "#6E9A38")])
+                  [(0.0, "#12240C"), (0.45, "#264A16"), (0.8, "#3F6D20"), (1.0, "#5C8630")])
     dry = b.ramp(stretch(b, mid, 0.3, 0.7), [(0.0, "#5A4D26"), (1.0, "#7C6A33")])
-    col = b.mix(stretch(b, big, 0.52, 0.66), leaf, dry)
+    col = b.mix(stretch(b, big, 0.60, 0.74), leaf, dry)
     h = combine(b, (stretch(b, fine, 0.2, 0.8), 0.6), (stretch(b, mid, 0.3, 0.7), 0.4))
     return dict(color=col, rough=0.95, height=h, strength=1.0, distance=0.012)
 

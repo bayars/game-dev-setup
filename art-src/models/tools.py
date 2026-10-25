@@ -149,7 +149,7 @@ export_glb(out_path())
 scene = bpy.context.scene
 common._enable_cuda()
 scene.render.engine = "CYCLES"
-scene.cycles.device = "GPU"
+scene.cycles.device = common.device()
 scene.cycles.samples = 48
 scene.cycles.use_denoising = True
 scene.render.film_transparent = True

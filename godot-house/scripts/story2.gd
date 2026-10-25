@@ -134,7 +134,7 @@ func _accident() -> void:
 		worker.hold_tool("")
 		worker.work("")
 		d.face(worker.global_position)
-	cine.shot(look + away * 2.3 + side * 0.7 + Vector3(0, 0.5, 0), look, 5.0)
+	cine.shot(look + away * 3.6 + side * 1.3 + Vector3(0, 0.9, 0), look + Vector3(0, -0.2, 0), 5.0)
 	await main._dialogue.play(case.before)
 	# the moment it happens
 	match case.what:
@@ -167,7 +167,9 @@ func _accident() -> void:
 	t.stop()
 	t.global_position = Vector3(9.6, House.UP + 0.05, 2.6)
 	t.go_to(d.body_position() + Vector3(1.2, 0, 0.6))
-	await cine.shot(d.body_position() + Vector3(-2.2, 3.4, 2.2), d.body_position(), 4.0)
+	var bp := d.body_position()
+	var inward := Vector3(room_mid.x - bp.x, 0, room_mid.z - bp.z).normalized()
+	await cine.shot(bp + inward * 2.4 + inward.cross(Vector3.UP) * 0.8 + Vector3(0, 3.2, 0), bp, 4.0)
 	await main._dialogue.play(case.after)
 	main.sfx.mute_world(false)
 	_cine_end()
@@ -176,6 +178,7 @@ func _accident() -> void:
 func _cine_begin() -> void:
 	cine.begin(main, main.cam.camera)
 	main.hud.set_cinematic(true)
+	main._update_rings()
 	if cover.active or phase >= Phase.FOUND:
 		cover._set_rings(false)
 
@@ -230,7 +233,7 @@ func _choice(minute: float) -> void:
 	main.cutscene = false
 	main.follow = true
 	main._board_dirty = true
-	main.hud.toast("Move him out of this room: lift him together (H calls %s) or drag him alone. Set him down at a blue ring, where it could pass for an accident, and set the scene. Tidy the signs. They will start looking for him soon." % main.tomas.display_name, 12.0)
+	main.hud.toast("Move him out of this room: L lifts him (together if %s is next to you, H calls him; alone you drag him, loud). Set him down at a blue ring and set the scene. E tidies the signs. Send %s to keep working. They will start looking for him soon." % [main.tomas.display_name, main.tomas.display_name], 14.0)
 
 func _truth() -> void:
 	_cine_begin()
@@ -247,6 +250,8 @@ func _on_found(by: Npc, caught: bool) -> void:
 	phase = Phase.FOUND
 	main.cutscene = true
 	cover.active = false
+	if main._carry != null:                    # whatever happens now, he is set down
+		main.put_down()
 	if main.install.is_active():
 		main.install.cancel()
 	var where := cover.body.where()
@@ -349,6 +354,7 @@ func _end(id: String, checks: Array) -> void:
 	ending = id
 	Game.runs += 1
 	Game.save()
+	cine.clear_beats()
 	cine.fade(0.82, 0.8)                       # the house stays faintly behind the card
 	var e: Array = Investigation.ENDINGS[id]
 	var lines: Array = Day2.TRUTH if id == "truth" else e[1]

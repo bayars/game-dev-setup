@@ -272,12 +272,8 @@ func lift(a: Actor) -> bool:
 func _target(a: Actor) -> Dictionary:
 	var best := {}
 	var bd := INF
-	if _near_body(a):
-		var p := body.where()
-		# he is big and near everything at the scene: smaller things win unless he is clearly closer
-		bd = Vector2(p.x - a.global_position.x, p.z - a.global_position.z).length()
-		if bd > 0.9:                           # right next to him, he wins
-			bd += 0.6
+	if _near_body(a):                          # E takes him only when nothing else is in reach (L always does)
+		bd = 1000.0
 		best = {"kind": "body"}
 	var t := _near_token(a)
 	if t and t.global_position.distance_to(a.global_position) < bd:

@@ -642,13 +642,19 @@ func _process(delta: float) -> void:
 	_update_prompt()
 	cam.floor_y = House.UP if House.level_of(current.global_position + Vector3(0, 0.6, 0)) == 1 else 0.0
 	var focus := current.global_position
-	if cam.is_focused():                     # the install view: cut the walls in front of the work
+	var toward := cam.toward_camera()
+	if story and story.cine.active and story.cine.camera:   # a cut-scene: the floor and walls it looks at
+		var c: Camera3D = story.cine.camera
+		focus = story.cine._look - Vector3(0, 0.6, 0)
+		toward = Vector2(c.global_position.x - focus.x, c.global_position.z - focus.z).normalized()
+	elif cam.is_focused():                   # the install view: cut the walls in front of the work
 		focus = Vector3(cam.look_point().x, current.global_position.y, cam.look_point().z)
-	house.update_cutaway(focus, cam.toward_camera(), delta)
+	house.update_cutaway(focus, toward, delta)
+	current._ring.visible = not cutscene
 	for a in [nico, tomas] + residents:      # people upstairs vanish with the upper floor; name tags show
 		var level := House.level_of(a.global_position + Vector3(0, 0.6, 0))   # only on the floor in view
 		a.visible = level <= house.level_shown
-		a.show_tag(level == house.level_shown and not install.is_active())
+		a.show_tag(level == house.level_shown and not install.is_active() and not cutscene)
 	if _board_dirty:
 		_board_dirty = false
 		_refresh_board()
@@ -752,7 +758,7 @@ func _update_rings() -> void:
 	for job in jobs.values():
 		var ring: Node3D = _rings.get(job.id)
 		if ring:
-			ring.visible = job.available(jobs) and not install.is_active()
+			ring.visible = job.available(jobs) and not install.is_active() and not cutscene
 
 func _refresh_board() -> void:
 	var o := other()

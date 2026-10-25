@@ -41,7 +41,7 @@ func _ready() -> void:
 	sfx.loop("yard_loop", true, -12.0)
 	sfx.loop("music_day_loop", true, -8.0, false)
 	_build_ui()
-	if not Game.seen_warning:
+	if not Game.seen_warning and not "--menu-preview" in args:
 		_warning.visible = true
 		_main_box.get_parent().visible = false
 
@@ -49,6 +49,7 @@ func _process(delta: float) -> void:
 	_angle += delta * 0.05
 	var centre := Vector3(8, 1.5, 6)
 	cam.look_at_from_position(centre + Vector3(sin(_angle) * 26, 15, cos(_angle) * 26), centre)
+	house.update_cutaway(Vector3(8, House.UP, 6), Vector2(sin(_angle), cos(_angle)), delta)   # the rooms open to view
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()

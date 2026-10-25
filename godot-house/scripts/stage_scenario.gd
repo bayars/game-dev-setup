@@ -11,6 +11,6 @@ extends Resource
 @export var level := 0
 @export var area := Rect2()               # where he must lie (x, z)
 @export var mark := Vector3.ZERO          # centre of the place (the floor ring, the camera)
-@export var explains: PackedStringArray = []     # injuries it fits
-@export var fits_heard: PackedStringArray = []   # rooms a heard crash could have come from
+@export var explains: Array = []         # injuries it fits (plain arrays: they survive the export)
+@export var fits_heard: Array = []       # rooms a heard crash could have come from
 @export var setup: Array = []             # [{id, text, at: Vector3, seconds, needs: item id or ""}]

@@ -169,6 +169,8 @@ func _cover_up(tidy_main: bool) -> String:
 		if story.case.injury in s.explains and (sc == null or s.id in ["stairs", "storage_nailgun"]):
 			sc = s
 	_log("signs tidied")
+	if sc == null:
+		return "no scenario explains %s (%s)" % [story.case.injury, cover.scenarios.map(func(x): return [x.id, x.explains, x.setup.size()])]
 	main.call_brother()
 	var body := cover.body
 	if not await _walk(nico, _beside(body)):

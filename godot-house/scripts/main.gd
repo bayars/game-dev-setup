@@ -184,6 +184,11 @@ func _ready() -> void:
 	else:
 		_intro()
 
+## Static references die with the scene, not after the engine (an exported build aborted at exit).
+func _exit_tree() -> void:
+	Actor.sfx = null
+	RoundBox.clear_cache()
+
 func _tune_lighting() -> void:
 	# afternoon instead of the Walk Home sunset; no outdoor fog in a house
 	gfx.sun.rotation_degrees = Vector3(-52, 30, 0)

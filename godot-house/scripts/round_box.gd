@@ -6,6 +6,9 @@ extends RefCounted
 
 static var _cache := {}
 
+static func clear_cache() -> void:
+	_cache.clear()
+
 static func mesh(size: Vector3, radius := 0.04, segments := 3) -> ArrayMesh:
 	var key := "%s|%s|%d" % [size, radius, segments]
 	if _cache.has(key):

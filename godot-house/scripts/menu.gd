@@ -45,6 +45,9 @@ func _ready() -> void:
 		_warning.visible = true
 		_main_box.get_parent().visible = false
 
+func _exit_tree() -> void:
+	RoundBox.clear_cache()
+
 func _process(delta: float) -> void:
 	_angle += delta * 0.05
 	var centre := Vector3(8, 1.5, 6)

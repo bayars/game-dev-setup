@@ -80,7 +80,7 @@ const WALLS := [
 	[Vector2(4.5, 7.5), Vector2(9, 7.5), [], 1],
 	[Vector2(4.5, 6), Vector2(4.5, 12), [[0.15, 1.2]], 1],             # Sofia's door off the hall
 	[Vector2(9, 0), Vector2(9, 12), [[2.0, 1.2], [6.0, 1.5], [9.5, 1.2]], 1],
-	[Vector2(11, 0), Vector2(11, 12), [[1.5, 1.2], [5.5, 1.2], [10.8, 1.15]], 1],   # ..., top of the stairs
+	[Vector2(11, 0), Vector2(11, 12), [[1.5, 1.2], [5.5, 1.2], [8.6, 1.2], [10.8, 1.15]], 1],   # ..., landing, top of the stairs
 	[Vector2(11, 4), Vector2(16, 4), [], 1],
 	[Vector2(11, 8), Vector2(16, 8), [], 1],
 	[Vector2(11.15, 10.85), Vector2(16, 10.85), [], 1, 1.0],          # railing along the stairwell
@@ -93,7 +93,6 @@ const FURNITURE := [
 	["Counter", Vector3(1.95, 0, 0.39), 0, true],
 	["CounterShort", Vector3(4.25, 0, 0.39), 0, true],
 	["Fridge", Vector3(6.0, 0, 0.43), 0, true],
-	["DrywallStack", Vector3(2.9, 0, 5.7), 90, true],
 	["ToolBag", Vector3(7.8, 0, 6.3), 0, true],
 	["Shelves", Vector3(0.4, 0, 9.0), 90, true],
 	["Workbench", Vector3(7.6, 0, 7.45), 0, true],

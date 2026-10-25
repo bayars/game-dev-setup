@@ -13,6 +13,8 @@ signal switch_brother
 signal toggle_follow
 signal call_brother
 signal tool_picked(id: String)
+signal restart
+signal quit
 
 const ICONS := "res://assets/icons/%s.png"
 
@@ -34,6 +36,7 @@ var _toast_text: Label
 var _toast_tween: Tween
 var _help: PanelContainer
 var _end: PanelContainer
+var _pause: PanelContainer
 var _end_body: VBoxContainer
 var _step_card: PanelContainer
 var _step_title: Label
@@ -41,10 +44,14 @@ var _step_dots: HBoxContainer
 var _step_text: Label
 var _step_progress: ProgressBar
 var _step_msg: Label
+var _step_hint: Label
+var _installing := false
 var _tray: PanelContainer
 var _tray_box: HBoxContainer
 var _tray_ids: Array = []
 var _root: Control
+var _brothers: Control
+var _extra_panels: Array = []          # added from outside (the dialogue)
 
 func _ready() -> void:
 	_root = Control.new()
@@ -60,6 +67,11 @@ func _ready() -> void:
 	_build_help()
 	_build_install()
 	_build_end()
+	_build_pause()
+	for pair in [[_jobs_panel, "Jobs"], [_prompt, "Prompt"], [_toast, "Toast"], [_help, "Help"], [_end, "EndCard"],
+			[_step_card, "StepCard"], [_tray, "ToolBag"], [_brothers, "Brothers"], [_pause, "Pause"]]:
+		pair[0].name = pair[1]
+	process_mode = Node.PROCESS_MODE_ALWAYS     # the pause menu works while the game is paused
 
 func theme_root() -> Control:
 	return _root
@@ -96,7 +108,7 @@ func set_status(clock: String, room: String, cash: int) -> void:
 func _build_jobs() -> void:
 	_jobs_panel = PanelContainer.new()
 	_jobs_panel.position = Vector2(16, 68)
-	_jobs_panel.custom_minimum_size = Vector2(330, 0)
+	_jobs_panel.custom_minimum_size = Vector2(360, 0)
 	_root.add_child(_jobs_panel)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 6)
@@ -121,64 +133,67 @@ func toggle_jobs() -> void:
 	_jobs_box.visible = _jobs_open
 
 ## Rebuilds the list. `helper` is the brother you can send; `auto` is the job he is doing on his own.
+## Open jobs get one line each; jobs that wait on another fold into one "later" line, finished ones into
+## one "done" line, so the list stays short.
 func set_jobs(jobs: Dictionary, helper: String, auto: Job) -> void:
 	for c in _jobs_box.get_children():
+		_jobs_box.remove_child(c)
 		c.queue_free()
-	var done := 0
-	for job in jobs.values():
-		if job.done:
-			done += 1
-	_jobs_count.text = "%d / %d" % [done, jobs.size()]
-	# open jobs first, then the ones waiting on another job, then the finished ones
-	var order: Array = jobs.values().filter(func(j): return not j.done and j.available(jobs))
-	order += jobs.values().filter(func(j): return not j.done and not j.available(jobs))
-	for job in order:
-		_jobs_box.add_child(_job_row(job, jobs, helper, auto))
-	if done > 0:                           # finished jobs fold into one line, the list stays short
+	var done: Array = jobs.values().filter(func(j): return j.done)
+	var open: Array = jobs.values().filter(func(j): return not j.done and j.available(jobs))
+	var later: Array = jobs.values().filter(func(j): return not j.done and not j.available(jobs))
+	_jobs_count.text = "%d / %d" % [done.size(), jobs.size()]
+	for job in open:
+		_jobs_box.add_child(_job_row(job, helper, auto))
+	if not later.is_empty():
+		var names := ", ".join(later.map(func(j): return j.title.to_lower()))
+		_jobs_box.add_child(_fold_line(UiTheme.MUTED.darkened(0.3), "Later: " + names))
+	if not done.is_empty():
 		var earned := 0
-		for job in jobs.values():
-			if job.done:
-				earned += job.pay
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-		var pad := MarginContainer.new()
-		pad.add_theme_constant_override("margin_left", 6)
-		pad.add_child(UiTheme.dot(UiTheme.OK, 10))
-		row.add_child(pad)
-		row.add_child(UiTheme.label("%d done  ·  $%d earned" % [done, earned], UiTheme.CAPTION, UiTheme.MUTED))
-		_jobs_box.add_child(row)
+		for job in done:
+			earned += job.pay
+		_jobs_box.add_child(_fold_line(UiTheme.OK, "%d done  ·  $%d earned" % [done.size(), earned]))
 
-func _job_row(job: Job, jobs: Dictionary, helper: String, auto: Job) -> Control:
+func _fold_line(dot: Color, text: String) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	var pad := MarginContainer.new()
+	pad.add_theme_constant_override("margin_left", 6)
+	pad.add_child(UiTheme.dot(dot, 10))
+	row.add_child(pad)
+	var l := UiTheme.label(text, UiTheme.CAPTION, UiTheme.MUTED)
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	l.custom_minimum_size.x = 250
+	row.add_child(l)
+	return row
+
+func _job_row(job: Job, helper: String, auto: Job) -> Control:
 	var row := PanelContainer.new()
-	var idle := UiTheme.panel(Color(0, 0, 0, 0), 8, 6)
-	var hot := UiTheme.panel(UiTheme.BG_SOFT, 8, 6)
+	var idle := UiTheme.panel(Color(0, 0, 0, 0), 8, 5)
+	var hot := UiTheme.panel(UiTheme.BG_SOFT, 8, 5)
 	row.add_theme_stylebox_override("panel", idle)
 	row.mouse_filter = Control.MOUSE_FILTER_PASS
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 10)
 	row.add_child(h)
-	var locked := not job.done and not job.available(jobs)
-	var mark_color := UiTheme.OK if job.done else (UiTheme.MUTED.darkened(0.3) if locked else UiTheme.ACCENT)
-	h.add_child(UiTheme.dot(mark_color, 10))
+	h.add_child(UiTheme.dot(UiTheme.ACCENT, 10))
 	var texts := VBoxContainer.new()
 	texts.add_theme_constant_override("separation", 0)
 	texts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(texts)
-	var title := UiTheme.label(job.title, UiTheme.BODY, UiTheme.MUTED if job.done or locked else UiTheme.TEXT)
+	var title := UiTheme.label(job.title, UiTheme.BODY)
+	title.clip_text = true
+	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	title.custom_minimum_size.x = 214
 	texts.add_child(title)
 	var sub := ""
-	if job.done:
-		sub = "Done  +$%d" % job.pay
-	elif locked:
-		sub = "After: " + ", ".join(job.requires.map(func(r): return (jobs[r] as Job).title.to_lower()))
-	elif job == auto:
+	if job == auto:
 		sub = "%s is on it" % helper
 	elif job.needs_two:
-		sub = "Needs both of you  ·  $%d" % job.pay
+		sub = "Needs both of you"
 	elif job.carry != null:
-		sub = "Heavy: carry it together  ·  $%d" % job.pay
-	else:
-		sub = "$%d" % job.pay
+		sub = "Heavy: carry it together"
 	if sub != "":
 		texts.add_child(UiTheme.label(sub, UiTheme.CAPTION, UiTheme.MUTED))
 	if job == auto and job.progress > 0.0:
@@ -187,15 +202,19 @@ func _job_row(job: Job, jobs: Dictionary, helper: String, auto: Job) -> Control:
 		bar.custom_minimum_size = Vector2(0, 4)
 		bar.value = job.progress * 100.0
 		texts.add_child(bar)
-	if not job.done and not locked and job.carry == null and job != auto:
+	var pay := UiTheme.label("$%d" % job.pay, UiTheme.CAPTION, UiTheme.OK)
+	pay.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(pay)
+	if job.carry == null and job != auto:
 		var send := Button.new()
-		send.text = "Send %s" % helper
+		send.text = "Send"
+		send.tooltip_text = "%s goes and does it on his own" % helper if job.solo_ok() else "%s goes there to hold it for you" % helper
 		send.add_theme_font_size_override("font_size", UiTheme.CAPTION)
 		send.add_theme_color_override("font_color", UiTheme.person_color(helper))
 		send.focus_mode = Control.FOCUS_NONE
 		send.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		send.pressed.connect(func(): send_job.emit(job))
-		send.modulate.a = 0.0               # shown on hover: one action per row, not a column of buttons
+		send.modulate.a = 0.55                  # always there, brighter on hover
 		h.add_child(send)
 		row.mouse_entered.connect(func():
 			row.add_theme_stylebox_override("panel", hot)
@@ -203,7 +222,7 @@ func _job_row(job: Job, jobs: Dictionary, helper: String, auto: Job) -> Control:
 		row.mouse_exited.connect(func():
 			if not row.get_global_rect().has_point(row.get_global_mouse_position()):
 				row.add_theme_stylebox_override("panel", idle)
-				send.modulate.a = 0.0)
+				send.modulate.a = 0.55)
 	return row
 
 # ---------------------------------------------------------------- the brothers
@@ -218,6 +237,7 @@ func _build_brothers() -> void:
 	v.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	v.add_theme_constant_override("separation", 6)
 	_root.add_child(v)
+	_brothers = v
 	var cards := HBoxContainer.new()
 	cards.alignment = BoxContainer.ALIGNMENT_END
 	v.add_child(cards)
@@ -312,19 +332,23 @@ func _build_toast() -> void:
 	_toast.add_theme_stylebox_override("panel", s)
 	_toast.anchor_left = 0.5
 	_toast.anchor_right = 0.5
-	_toast.offset_left = -270
-	_toast.offset_right = 270
+	_toast.offset_left = -248                   # clear of the job list on the left
+	_toast.offset_right = 248
 	_toast.offset_top = 16
 	_toast.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_toast)
 	_toast_text = UiTheme.label("", UiTheme.BODY)
 	_toast_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_toast_text.custom_minimum_size.x = 512     # a wrapping label has no width of its own
+	_toast_text.custom_minimum_size.x = 472     # a wrapping label has no width of its own
 	_toast.add_child(_toast_text)
 	_toast.modulate.a = 0.0
 
 func toast(text: String, seconds := 6.0) -> void:
+	if _installing:                          # tips go into the step card instead of over the work
+		_step_hint.text = text
+		_step_hint.visible = true
+		return
 	_toast_text.text = text
 	_toast.reset_size()
 	if _toast_tween:
@@ -359,12 +383,15 @@ func _build_help() -> void:
 	for k in [["Click / WASD", "walk"], ["Shift", "run"], ["E", "use, lift, put down"], ["Tab", "switch brother"],
 			["Right click", "send the other one there"], ["F", "he follows / waits"], ["H", "call him over"],
 			["J", "fold the job list"], ["Q / R", "turn the view"], ["Wheel", "zoom"], ["1-9", "pick a tool"],
-			["Esc", "stop working / quit"], ["G", "graphics quality"], ["F1", "this help"]]:
+			["Esc", "pause / stop working"], ["G", "graphics quality"], ["F1", "this help"]]:
 		grid.add_child(UiTheme.key_hint(k[0], k[1]))
 	_help.visible = false
 
 func toggle_help() -> void:
 	_help.visible = not _help.visible
+	_jobs_panel.visible = not _help.visible and not _installing and not _end.visible
+	if _help.visible:
+		_toast.modulate.a = 0.0
 
 func help_visible() -> bool:
 	return _help.visible
@@ -402,8 +429,12 @@ func _build_install() -> void:
 	v.add_child(_step_progress)
 	_step_msg = UiTheme.label("", UiTheme.CAPTION, UiTheme.DANGER)
 	_step_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_step_msg.custom_minimum_size.x = 560
+	_step_msg.custom_minimum_size = Vector2(560, 18)   # always there, so the card never jumps
 	v.add_child(_step_msg)
+	_step_hint = UiTheme.label("", UiTheme.CAPTION, UiTheme.ACCENT)
+	_step_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_step_hint.custom_minimum_size.x = 560
+	v.add_child(_step_hint)
 	var keys := HBoxContainer.new()
 	keys.add_theme_constant_override("separation", 16)
 	keys.modulate.a = 0.75
@@ -430,10 +461,17 @@ func _build_install() -> void:
 ## Redraws the step card and the tool bag from the install state.
 func show_install(ins: Install) -> void:
 	var on := ins.is_active()
+	if on and not _installing:
+		_step_hint.visible = false
+		_toast.modulate.a = 0.0
+	_installing = on
+	for c in _extra_panels:                    # the dialogue sits above the tool bag while working
+		if c is Dialogue:
+			c.offset_top = -176 if on else -84
+			c.offset_bottom = c.offset_top
 	_step_card.visible = on
 	_tray.visible = on
 	_jobs_panel.visible = not on
-	_toast.offset_top = 196 if on else 16     # under the step card while working
 	if not on:
 		_tray_ids = []
 		return
@@ -450,7 +488,6 @@ func show_install(ins: Install) -> void:
 	_step_progress.value = (ins.hold_ratio() if s.kind == "hold" else float(p.x) / maxf(1.0, p.y)) * 100.0
 	_step_msg.text = ins.message
 	_step_msg.add_theme_color_override("font_color", UiTheme.DANGER if ins.message_bad else UiTheme.OK)
-	_step_msg.visible = ins.message != ""
 	if _tray_ids != ins.tray:
 		_tray_ids = ins.tray.duplicate()
 		for c in _tray_box.get_children():
@@ -548,6 +585,60 @@ func show_end(title: String, cash: int, seen: Array, lesson: String, actions: Ar
 	_end.visible = true
 	_jobs_panel.visible = false
 
+# ---------------------------------------------------------------- pause
+
+func _build_pause() -> void:
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(center)
+	_pause = PanelContainer.new()
+	_pause.custom_minimum_size = Vector2(360, 0)
+	_pause.add_theme_stylebox_override("panel", UiTheme.panel(Color(0.05, 0.055, 0.07, 0.96), 14, 24))
+	center.add_child(_pause)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 10)
+	_pause.add_child(v)
+	v.add_child(UiTheme.label("Paused", UiTheme.HEADLINE, UiTheme.ACCENT))
+	for b in [["Esc", "Resume", func(): show_pause(false)],
+			["F1", "Controls", func():
+				show_pause(false)
+				toggle_help()],
+			["R", "Restart the day", func():
+				show_pause(false)
+				restart.emit()],
+			["Q", "Quit the game", func(): quit.emit()]]:
+		var btn := Button.new()
+		btn.text = "%s     %s" % [b[0], b[1]]
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.pressed.connect(b[2])
+		v.add_child(btn)
+	_pause.visible = false
+
+func show_pause(on: bool) -> void:
+	_pause.visible = on
+	get_tree().paused = on
+
+func paused() -> bool:
+	return _pause.visible
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not _pause.visible or not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	match event.physical_keycode:
+		KEY_ESCAPE:
+			show_pause(false)
+		KEY_R:
+			show_pause(false)
+			restart.emit()
+		KEY_Q:
+			quit.emit()
+		KEY_F1:
+			show_pause(false)
+			toggle_help()
+	get_viewport().set_input_as_handled()
+
 ## Centres a centre-anchored control on its content size (growing both ways does not re-centre it).
 func _center(c: Control, vertical := false) -> void:
 	var m := c.get_combined_minimum_size()
@@ -561,6 +652,35 @@ func _center(c: Control, vertical := false) -> void:
 func end_visible() -> bool:
 	return _end.visible
 
+## Where the install view may put hotspots: under the step card, above the tool bag, clear of the sides.
+func install_safe_rect() -> Rect2:
+	var vp := _root.get_viewport_rect().size
+	var top := _step_card.get_global_rect().end.y + 24
+	var bottom := _tray.get_global_rect().position.y - 24 if _tray.size.y > 0 else vp.y - 170
+	if top < 120:                              # not laid out yet
+		top = 190
+	return Rect2(48, top, vp.x - 96, bottom - top)
+
+## The top-level panels showing now (play-test: none may overlap another).
+func top_panels() -> Array:
+	var out := []
+	for c in [_jobs_panel, _prompt, _toast, _help, _end, _step_card, _tray, _brothers, _pause] + _extra_panels:
+		if c != null and c.is_visible_in_tree() and c.modulate.a > 0.05:
+			out.append(c)
+	var status := _clock.get_parent().get_parent() as Control
+	out.append(status)
+	return out
+
+## Screen rectangles of the panels that are showing (the play-test keeps hotspots out from under them).
+func blocking_rects() -> Array[Rect2]:
+	var out: Array[Rect2] = []
+	for c in _root.find_children("*", "PanelContainer", true, false):
+		var p := c as PanelContainer
+		if p.is_visible_in_tree() and p.modulate.a > 0.05:
+			out.append(p.get_global_rect())
+	return out
+
 ## Puts a control (the dialogue) under the HUD theme.
 func add_ui(c: Control) -> void:
 	_root.add_child(c)
+	_extra_panels.append(c)

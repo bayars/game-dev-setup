@@ -44,6 +44,7 @@ var _auto_job: Job                     # what the other brother is doing on his 
 var _auto_units := 0                   # how many of its hotspots he has finished
 var _dialogue: Dialogue
 var _selftest := false
+var _scripted := false                 # self-test or play-test: no keyboard steering
 var _follow_timer := 0.0
 var _nav_ok := false
 var _hints_shown := {}
@@ -53,6 +54,7 @@ var _board_dirty := true
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
 	_selftest = "--selftest" in args
+	_scripted = _selftest or "--playtest" in args
 	var forced := ""
 	for a in args:
 		if a.begins_with("--quality="):
@@ -101,6 +103,8 @@ func _ready() -> void:
 	hud.switch_brother.connect(switch_brother)
 	hud.toggle_follow.connect(toggle_follow)
 	hud.call_brother.connect(call_brother)
+	hud.restart.connect(func(): get_tree().reload_current_scene())
+	hud.quit.connect(func(): get_tree().quit())
 	_dialogue = Dialogue.new()
 	hud.add_ui(_dialogue)
 	_dialogue.speaking.connect(func(who: String):
@@ -114,6 +118,9 @@ func _ready() -> void:
 		if loud:
 			make_noise(at, BANG_NOISE, what))
 	install.changed.connect(func(): hud.show_install(install))
+	install.safe_rect = hud.install_safe_rect
+	install.people = [nico, tomas] + residents
+	_update_rings()
 	hud.tool_picked.connect(install.select)
 
 	_control(nico)
@@ -123,6 +130,12 @@ func _ready() -> void:
 		Engine.time_scale = 4.0
 		_dialogue.fast = true
 		_run_selftest()
+	elif "--playtest" in args:
+		Engine.time_scale = 2.0
+		_dialogue.fast = true
+		var pt := Playtest.new(self, args)
+		add_child(pt)
+		pt.run()
 	else:
 		_intro()
 
@@ -332,6 +345,14 @@ func put_down() -> void:
 	c.carriers = []
 	c.position.y = Worksite.FLOOR
 	_carry = null
+	if not _load_fits(c, c.global_position, c.rotation.y):      # in a doorway: set it down where it fits
+		var best := lead_pos
+		for k in 16:
+			var p := lead_pos + Vector3(cos(k * TAU / 16), 0, sin(k * TAU / 16)) * (0.7 + c.size.z / 2.0)
+			if _load_fits(c, p, c.rotation.y):
+				best = p
+				break
+		c.global_position = Vector3(best.x, lead_pos.y + Worksite.FLOOR - 0.04, best.z)
 	for job in jobs.values():
 		var near_load := Vector2(c.position.x - job.carry_target.x, c.position.z - job.carry_target.z).length() < 1.7
 		var near_lead := Vector2(lead_pos.x - job.carry_target.x, lead_pos.z - job.carry_target.z).length() < 1.4
@@ -339,6 +360,16 @@ func put_down() -> void:
 			c.position = job.carry_target + Vector3(0, Worksite.FLOOR, 0)
 			c.rotation = Vector3.ZERO
 			complete_job(job)
+
+## True if a load of `c`'s size stands at `at` (turned `yaw`) without going into a wall or furniture.
+func _load_fits(c: Carryable, at: Vector3, yaw: float) -> bool:
+	var q := PhysicsShapeQueryParameters3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(c.size.x - 0.06, c.size.y - 0.12, c.size.z - 0.06)
+	q.shape = box
+	q.transform = Transform3D(Basis(Vector3.UP, yaw), at + Vector3(0, c.size.y / 2.0 + 0.08, 0))
+	q.collision_mask = 1
+	return get_world_3d().direct_space_state.intersect_shape(q, 1).is_empty()
 
 func start_job(job: Job) -> void:
 	var helper: Actor = null
@@ -356,8 +387,10 @@ func start_job(job: Job) -> void:
 	if helper:
 		_take_pair_posts(job, helper)
 		_board_dirty = true
-	_rings[job.id].visible = false
+	elif follow and not other().busy and other().global_position.distance_to(current.global_position) < 4.0:
+		_step_aside(other(), job)
 	install.start(job, current, helper, site, cam)
+	_update_rings()
 	_show_hint_once("install")
 
 ## Two-person jobs: the worker stands at the station, the helper 1.2 m to the side along the work
@@ -366,6 +399,8 @@ func _take_pair_posts(job: Job, helper: Actor) -> void:
 	var work := Vector3.ZERO
 	var n := 0
 	for s in job.steps.size():
+		if job.steps[s].has("at"):              # done elsewhere (the sheet stack)
+			continue
 		for p in site.spots(job.id, s):
 			work += p
 			n += 1
@@ -379,13 +414,25 @@ func _take_pair_posts(job: Job, helper: Actor) -> void:
 	var spot := job.station + side * 1.2
 	helper.take_post(Vector3(spot.x, floor_y, spot.z), work + side * 1.2)
 
+## The brother who is not needed steps back from the work instead of standing in the camera's way.
+func _step_aside(a: Actor, job: Job) -> void:
+	var work := Vector3.ZERO
+	var spots: Array = site.spots(job.id, 0)
+	for p in spots:
+		work += p
+	work /= maxf(1.0, spots.size())
+	var away := Vector3(job.station.x - work.x, 0, job.station.z - work.z).normalized().rotated(Vector3.UP, 0.8)
+	var map := get_world_3d().navigation_map
+	var spot := NavigationServer3D.map_get_closest_point(map, job.station + away * 2.0 + Vector3(0, 0.2, 0))
+	a.go_to(spot)
+
 func _on_install_finished(job: Job) -> void:
 	_release_install(job)
 	complete_job(job)
 
 func _on_install_cancelled(job: Job) -> void:
 	_release_install(job)
-	_rings[job.id].visible = true
+	_update_rings()
 
 func _release_install(job: Job) -> void:
 	current.busy = false
@@ -398,9 +445,7 @@ func complete_job(job: Job) -> void:
 		return
 	job.done = true
 	cash += job.pay
-	var ring: Node3D = _rings.get(job.id)
-	if ring:
-		ring.visible = false
+	_update_rings()
 	_board_dirty = true
 	if Day1.DANIEL_LINES.has(job.id):
 		_dialogue.bark("Daniel", Day1.DANIEL_LINES[job.id], 3.0)
@@ -461,7 +506,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				if hud.help_visible():
 					hud.toggle_help()
 				else:
-					get_tree().quit()
+					hud.show_pause(true)
 	elif event is InputEventMouseButton and event.pressed:
 		match event.button_index:
 			MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT:
@@ -487,7 +532,7 @@ func _process(delta: float) -> void:
 	for r in residents:
 		r.tick(minute, delta)
 
-	if not _selftest:
+	if not _scripted:
 		var input := Vector2(
 			float(_down(KEY_D, KEY_RIGHT)) - float(_down(KEY_A, KEY_LEFT)),
 			float(_down(KEY_S, KEY_DOWN)) - float(_down(KEY_W, KEY_UP)))
@@ -499,11 +544,14 @@ func _process(delta: float) -> void:
 	_update_auto_work(delta)
 	_update_prompt()
 	cam.floor_y = House.UP if House.level_of(current.global_position + Vector3(0, 0.6, 0)) == 1 else 0.0
-	house.update_cutaway(current.global_position, cam.toward_camera(), delta)
+	var focus := current.global_position
+	if cam.is_focused():                     # the install view: cut the walls in front of the work
+		focus = Vector3(cam.look_point().x, current.global_position.y, cam.look_point().z)
+	house.update_cutaway(focus, cam.toward_camera(), delta)
 	for a in [nico, tomas] + residents:      # people upstairs vanish with the upper floor; name tags show
 		var level := House.level_of(a.global_position + Vector3(0, 0.6, 0))   # only on the floor in view
 		a.visible = level <= house.level_shown
-		a.show_tag(level == house.level_shown)
+		a.show_tag(level == house.level_shown and not install.is_active())
 	if _board_dirty:
 		_board_dirty = false
 		_refresh_board()
@@ -514,7 +562,13 @@ func _update_carry(delta: float) -> void:
 	var lead := _carry.lead()
 	var fwd := lead.forward()
 	if _carry.carriers.size() == 1:
-		_carry.global_position = lead.global_position + fwd * (0.45 + _carry.size.z / 2.0) + Vector3(0, 0.02, 0)   # pushed along the floor
+		# pushed along the floor in front of him, never into a wall: it comes closer where there is no room
+		var reach := 0.45 + _carry.size.z / 2.0
+		var at := lead.global_position + fwd * reach
+		while reach > 0.1 and not _load_fits(_carry, at, lead.model.rotation.y):
+			reach -= 0.1
+			at = lead.global_position + fwd * reach
+		_carry.global_position = at + Vector3(0, 0.02, 0)
 		if lead.is_moving():
 			_noise_timer -= delta
 			if _noise_timer <= 0.0:
@@ -527,7 +581,7 @@ func _update_carry(delta: float) -> void:
 func _update_follow(delta: float) -> void:
 	_follow_timer -= delta
 	var o := other()
-	if not follow or o.busy or o.lead != null or _auto_job != null or _follow_timer > 0.0:
+	if not follow or o.busy or o.lead != null or _auto_job != null or _follow_timer > 0.0 or install.is_active():
 		return
 	_follow_timer = 0.5
 	if o.global_position.distance_to(current.global_position) > 2.2:
@@ -585,6 +639,13 @@ func _update_prompt() -> void:
 			hud.set_prompt("E", job.title + ("  (needs %s to hold)" % other().display_name if job.needs_two else ""))
 		else:
 			hud.set_prompt("", "")
+
+## Floor rings mark the open jobs; they are hidden in the install view, where the hotspots take over.
+func _update_rings() -> void:
+	for job in jobs.values():
+		var ring: Node3D = _rings.get(job.id)
+		if ring:
+			ring.visible = job.available(jobs) and not install.is_active()
 
 func _refresh_board() -> void:
 	var o := other()

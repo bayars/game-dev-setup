@@ -9,6 +9,11 @@ extends RefCounted
 ## (hotspots in a set order), seconds (hold)}. The hotspots and what appears are in Worksite.
 
 const COUCH_TARGET := Vector3(2.0, 0, 2.7)
+## Install view angles (yaw, pitch in degrees; yaw 0 looks north from the south, 90 looks west).
+const EAST_LOW := Vector2(62, -40)        # the new wall, from the east
+const EAST_FACE := Vector2(62, -24)       # .. lower, to see up to its top
+const NORTH_FACE := Vector2(25, -30)      # the kitchen wall
+const FLOOR_VIEW := Vector2(35, -58)      # work on the floor, from above
 const DISHWASHER_TARGET := Vector3(5.1, 0, 0.75)
 
 static func jobs(couch: Carryable, dishwasher: Carryable) -> Dictionary:
@@ -28,9 +33,9 @@ static func jobs(couch: Carryable, dishwasher: Carryable) -> Dictionary:
 
 	j = Job.new("studs", "Frame the new wall", Vector3(7.0, 0, 3.0))
 	j.steps = [
-		{"tool": "tape", "kind": "hold", "seconds": 1.5, "text": "Measure and mark the stud positions on the plate"},
-		{"tool": "drill", "kind": "spots", "text": "Stand each stud on its mark and screw it down"},
-		{"tool": "drill", "kind": "hold", "seconds": 1.5, "text": "Screw the top plate across the studs"},
+		{"tool": "tape", "kind": "hold", "seconds": 1.5, "text": "Measure and mark the stud positions on the plate", "view": EAST_LOW},
+		{"tool": "drill", "kind": "spots", "text": "Stand each stud on its mark and screw it down", "view": EAST_LOW},
+		{"tool": "drill", "kind": "hold", "seconds": 1.5, "text": "Screw the top plate across the studs", "view": EAST_FACE},
 	]
 	j.pay = 70
 	list.append(j)
@@ -39,39 +44,39 @@ static func jobs(couch: Carryable, dishwasher: Carryable) -> Dictionary:
 	j.needs_two = true
 	j.requires = ["studs"]
 	j.steps = [
-		{"tool": "knife", "kind": "hold", "seconds": 1.2, "text": "Score and snap the last sheet to size"},
-		{"tool": "sheet", "kind": "spots", "text": "Lift each sheet onto the studs (Tomas holds it while you fix it)"},
-		{"tool": "drill", "kind": "spots", "text": "Screw the sheets to every stud"},
-		{"tool": "taping", "kind": "spots", "text": "Tape the two seams"},
-		{"tool": "mud", "kind": "hold", "seconds": 2.5, "text": "Mud over the tape and the screw heads"},
+		{"tool": "knife", "kind": "hold", "seconds": 1.2, "text": "Score and snap the last sheet to size", "at": Vector3(8.05, 0, 5.7), "view": Vector2(-70, -38)},
+		{"tool": "sheet", "kind": "spots", "text": "Lift each sheet onto the studs (Tomas holds it while you fix it)", "view": EAST_FACE},
+		{"tool": "drill", "kind": "spots", "text": "Screw the sheets to every stud", "view": EAST_FACE},
+		{"tool": "taping", "kind": "spots", "text": "Tape the two seams", "view": EAST_FACE},
+		{"tool": "mud", "kind": "hold", "seconds": 2.5, "text": "Mud over the tape and the screw heads", "view": EAST_FACE},
 	]
 	j.pay = 90
 	list.append(j)
 
-	j = Job.new("wiring", "Wire the new socket", Vector3(7.6, 0, 1.0))
+	j = Job.new("wiring", "Wire the new socket", Vector3(7.05, 0, 0.95))
 	j.steps = [
-		{"tool": "stripper", "kind": "hold", "seconds": 1.2, "text": "Strip the wire ends"},
-		{"tool": "screwdriver", "kind": "order", "text": "Connect earth first, then live, then neutral"},
-		{"tool": "plate", "kind": "spots", "text": "Fit the socket cover"},
+		{"tool": "stripper", "kind": "hold", "seconds": 1.2, "text": "Strip the wire ends", "view": NORTH_FACE},
+		{"tool": "screwdriver", "kind": "order", "text": "Connect earth first, then live, then neutral", "view": NORTH_FACE},
+		{"tool": "plate", "kind": "spots", "text": "Fit the socket cover", "view": NORTH_FACE},
 	]
 	j.pay = 80
 	list.append(j)
 
 	j = Job.new("flooring", "Lay the laminate", Vector3(7.7, 0, 4.9))
 	j.steps = [
-		{"tool": "underlay", "kind": "hold", "seconds": 1.5, "text": "Roll out the underlay"},
-		{"tool": "planks", "kind": "spots", "text": "Lay the planks, row by row"},
-		{"tool": "mallet", "kind": "hold", "seconds": 1.2, "text": "Tap the joints tight"},
+		{"tool": "underlay", "kind": "hold", "seconds": 1.5, "text": "Roll out the underlay", "view": FLOOR_VIEW},
+		{"tool": "planks", "kind": "spots", "text": "Lay the planks, row by row", "view": FLOOR_VIEW},
+		{"tool": "mallet", "kind": "hold", "seconds": 1.2, "text": "Tap the joints tight", "view": FLOOR_VIEW},
 	]
 	j.pay = 70
 	list.append(j)
 
-	j = Job.new("dishwasher", "Install the dishwasher", DISHWASHER_TARGET + Vector3(0, 0, 0.75))
+	j = Job.new("dishwasher", "Install the dishwasher", Vector3(6.15, 0, 1.45))
 	j.requires = ["dishwasher_in"]
 	j.steps = [
-		{"tool": "knife", "kind": "hold", "seconds": 1.2, "text": "Cut the box open"},
-		{"tool": "wrench", "kind": "spots", "text": "Connect the water and the drain hose"},
-		{"tool": "level", "kind": "hold", "seconds": 1.5, "text": "Slide it in and level it"},
+		{"tool": "knife", "kind": "hold", "seconds": 1.2, "text": "Cut the box open", "view": Vector2(10, -50)},
+		{"tool": "wrench", "kind": "spots", "text": "Connect the water and the drain hose", "view": Vector2(10, -62)},
+		{"tool": "level", "kind": "hold", "seconds": 1.5, "text": "Slide it in and level it", "view": Vector2(10, -45)},
 	]
 	j.pay = 60
 	list.append(j)
@@ -79,16 +84,16 @@ static func jobs(couch: Carryable, dishwasher: Carryable) -> Dictionary:
 	j = Job.new("assemble", "Assemble couch and table", COUCH_TARGET + Vector3(1.5, 0, 0.9))
 	j.requires = ["couch_in"]
 	j.steps = [
-		{"tool": "knife", "kind": "hold", "seconds": 1.2, "text": "Cut the box open"},
-		{"tool": "allen", "kind": "spots", "text": "Bolt the legs onto the couch"},
-		{"tool": "allen", "kind": "spots", "text": "Bolt the legs onto the table"},
+		{"tool": "knife", "kind": "hold", "seconds": 1.2, "text": "Cut the box open", "view": FLOOR_VIEW},
+		{"tool": "allen", "kind": "spots", "text": "Bolt the legs onto the upturned couch", "view": FLOOR_VIEW},
+		{"tool": "allen", "kind": "spots", "text": "Bolt the legs onto the table", "view": FLOOR_VIEW},
 	]
 	j.pay = 50
 	list.append(j)
 
 	j = Job.new("measure", "Measure Daniel's room (upstairs)", Vector3(4.5, House.UP, 3.0))
 	j.steps = [
-		{"tool": "tape", "kind": "spots", "text": "Measure wall to wall for tomorrow's job"},
+		{"tool": "tape", "kind": "spots", "text": "Measure wall to wall for tomorrow's job", "view": Vector2(45, -62)},
 	]
 	j.pay = 20
 	list.append(j)

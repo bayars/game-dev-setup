@@ -41,6 +41,8 @@ var _tool_id := ""
 var _tools_src: Node
 var _fresh := 0                # physics frames since go_to; the agent needs a frame to compute a path
 var _post: Variant = null      # take_post: a working spot to step to while busy
+var _stalled := 0.0            # seconds a walk has made no headway (a re-path follows)
+var _repaths := 0
 var _post_look := Vector3.ZERO
 var size := 1.0                # model scale (height / built height); strides scale with it
 var skeleton: Skeleton3D
@@ -48,6 +50,11 @@ var limp := false              # a ragdoll (go_limp) or a carried body (hold_lim
 var _shape: CollisionShape3D
 var _label: Label3D
 var _sim: PhysicalBoneSimulator3D
+var _meshes: Array[GeometryInstance3D] = []
+var _fade := 0.0               # 0 solid .. FADED see-through (standing in front of the work)
+var _fade_goal := 0.0
+
+const FADED := 0.78
 
 ## `who` is a name in People.CAST: its own model, scaled to its height.
 func setup(who: String, gfx: Graphics) -> void:
@@ -57,7 +64,7 @@ func setup(who: String, gfx: Graphics) -> void:
 	collision_mask = 1       # so nobody gets stuck in a 1.2 m doorway
 	_shape = CollisionShape3D.new()
 	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.24
+	capsule.radius = 0.2              # 0.1 m inside the navmesh margin (0.3), so corners are never clipped
 	capsule.height = 1.75 * size
 	_shape.shape = capsule
 	_shape.position.y = 0.875 * size
@@ -67,6 +74,8 @@ func setup(who: String, gfx: Graphics) -> void:
 	model.scale = Vector3.ONE * size
 	add_child(model)
 	gfx.style_person(model)
+	for mi in model.find_children("*", "MeshInstance3D", true, false):
+		_meshes.append(mi)
 	_anim = model.find_child("AnimationPlayer", true, false)
 	if _anim:
 		_anim.play("idle")
@@ -80,7 +89,7 @@ func setup(who: String, gfx: Graphics) -> void:
 	agent = NavigationAgent3D.new()
 	agent.radius = 0.35
 	agent.height = 1.8
-	agent.path_desired_distance = 0.25  # small: a doorway corner counts as passed only when actually rounded
+	agent.path_desired_distance = 0.12  # small: a doorway corner counts as passed only when actually rounded
 	agent.path_height_offset = 0.2       # the baked navmesh sits ~0.2 m above the floor
 	agent.target_desired_distance = 0.45
 	add_child(agent)
@@ -141,6 +150,23 @@ func hold_tool(id: String) -> void:
 	_tool.transform = GRIP
 	_hand.add_child(_tool)
 
+## See-through while standing between the camera and the work in the install view.
+func set_faded(on: bool) -> void:
+	_fade_goal = FADED if on else 0.0
+
+func is_faded() -> bool:
+	return _fade_goal > 0.0
+
+func _update_fade(delta: float) -> void:
+	if is_equal_approx(_fade, _fade_goal):
+		return
+	_fade = move_toward(_fade, _fade_goal, delta * 4.0)
+	for g in _meshes:
+		g.transparency = _fade
+	if _tool:
+		for g in _tool.find_children("*", "GeometryInstance3D", true, false):
+			(g as GeometryInstance3D).transparency = _fade
+
 func tool_in_hand() -> String:
 	return _tool_id
 
@@ -154,12 +180,20 @@ func go_to(p: Vector3) -> void:
 	agent.target_position = p
 	_going = true
 	_fresh = 0
+	_stalled = 0.0
+	_repaths = 0
 
-## While busy: walk straight to a nearby working spot and face `look` there (pair jobs keep apart).
+## While busy: walk to a working spot (around anything in the way) and face `look` there.
 func take_post(p: Vector3, look: Vector3) -> void:
+	var map := get_world_3d().navigation_map
+	if NavigationServer3D.map_get_iteration_id(map) > 0:   # a spot against a wall moves out to where one can stand
+		var q := NavigationServer3D.map_get_closest_point(map, p + Vector3(0, 0.2, 0))
+		p = Vector3(q.x, p.y, q.z)
 	_post = p
 	_post_look = look
 	_going = false
+	agent.target_position = p
+	_fresh = 0
 
 func stop() -> void:
 	_going = false
@@ -181,6 +215,9 @@ func is_moving() -> bool:
 func room() -> String:
 	return House.room_at(global_position)
 
+func _process(delta: float) -> void:
+	_update_fade(delta)
+
 func _physics_process(delta: float) -> void:
 	if limp:
 		return
@@ -189,7 +226,12 @@ func _physics_process(delta: float) -> void:
 		if _post != null:             # step over to the assigned working spot, then face the work
 			var to_post: Vector3 = _post - global_position
 			to_post.y = 0.0
-			if to_post.length() > 0.06:
+			_fresh += 1
+			if to_post.length() > 0.6 and _fresh > 2 and not agent.is_navigation_finished():
+				var to := agent.get_next_path_position() - global_position
+				to.y = 0.0
+				dir = to.normalized()
+			elif to_post.length() > 0.06:
 				dir = to_post.normalized() * minf(1.0, to_post.length() * 2.5)
 			else:
 				_post = null
@@ -219,13 +261,54 @@ func _physics_process(delta: float) -> void:
 	velocity.z = move_toward(velocity.z, want.z, ACCEL * delta * speed)
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta
 	move_and_slide()
+	if dir != Vector3.ZERO:
+		_keep_on_navmesh()
 	var planar := Vector2(velocity.x, velocity.z)
+	if _going and _fresh > 2:
+		_unstick(planar.length(), delta)
 	if lead != null:                  # face the lead and the load between you
 		var d := lead.global_position - global_position
 		model.rotation.y = lerp_angle(model.rotation.y, atan2(d.x, d.z), 10.0 * delta)
 	elif planar.length() > 0.2:
 		model.rotation.y = lerp_angle(model.rotation.y, atan2(planar.x, planar.y), 10.0 * delta)
 	_animate(planar.length())
+
+## Keeps a person on the walkable area (the navigation mesh, 0.3 m in from walls and furniture), so the
+## keys or a carry never push anyone into a corner that click-to-move cannot find a way out of.
+func _keep_on_navmesh() -> void:
+	var map := get_world_3d().navigation_map
+	if NavigationServer3D.map_get_iteration_id(map) == 0:
+		return
+	var p := global_position
+	var q := NavigationServer3D.map_get_closest_point(map, p + Vector3(0, 0.2, 0))
+	var inward := Vector2(q.x - p.x, q.z - p.z)
+	# on the stair ramp the closest point sits a few cm uphill (the mesh floats over the slope): leave it
+	var excess := inward.length() - 0.1
+	if excess <= 0.0 or absf(q.y - p.y) > 0.8:
+		return
+	var n := inward.normalized()
+	global_position += Vector3(n.x, 0, n.y) * excess
+	var v := Vector2(velocity.x, velocity.z)
+	if v.dot(n) < 0.0:                         # no walking on the spot against the edge
+		v -= n * v.dot(n)
+		velocity.x = v.x
+		velocity.z = v.y
+
+## A walk that makes no headway for a second asks for a new path; after three tries it gives up where it is.
+func _unstick(planar: float, delta: float) -> void:
+	if planar > 0.3:
+		_stalled = 0.0
+		return
+	_stalled += delta
+	if _stalled < 1.0:
+		return
+	_stalled = 0.0
+	_repaths += 1
+	if _repaths > 3:
+		_going = false
+		arrived.emit()
+	else:
+		agent.target_position = agent.target_position
 
 func _animate(planar: float) -> void:
 	if _anim == null:

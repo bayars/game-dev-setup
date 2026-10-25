@@ -134,6 +134,11 @@ func setup(who: String, gfx: Graphics) -> void:
 	_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_ring)
 
+func _exit_tree() -> void:
+	if _tools_src:                             # the tool library is not in the tree: free it with us
+		_tools_src.free()
+		_tools_src = null
+
 ## Play a work clip ("" to go back to walking and idling).
 func work(anim: String, tool := "") -> void:
 	work_anim = anim

@@ -161,6 +161,13 @@ func build(gfx: Graphics) -> void:
 			at.y = 0.04                         # on top of the ground floor boards
 		prop(f[0], at, f[2], f[3])
 
+## The prop library is never in the scene tree: free it with the house (an orphan's render instances
+## made the exported build crash on quit).
+func _exit_tree() -> void:
+	if _props_root:
+		_props_root.free()
+		_props_root = null
+
 ## A copy of a Blender prop placed in the house. Solid props get a box collider around their mesh.
 func prop(prop_name: String, at: Vector3, yaw_deg := 0.0, solid := true, parent: Node = null) -> Node3D:
 	var src := _props_root.get_node_or_null("P_" + prop_name) as Node3D

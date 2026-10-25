@@ -252,7 +252,7 @@ func _collider(size: Vector3, at: Vector3) -> CollisionShape3D:
 	return shape
 
 func _stud_pile(i: int) -> Vector3:
-	return Vector3(7.25 + (i % 3) * 0.11, FLOOR + 0.025 + (i / 3) * 0.047, 2.0)
+	return Vector3(7.25 + (i % 3) * 0.11, FLOOR + 0.025 + (i / 3) * 0.047, 2.75)   # lying north, clear of the kitchen wall
 
 func _plank_pos(k: int) -> Vector3:
 	return Vector3(LAMINATE.get_center().x, FLOOR + 0.006, LAMINATE.position.y + 0.19 * (k + 0.5))

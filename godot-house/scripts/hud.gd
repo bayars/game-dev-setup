@@ -15,6 +15,9 @@ signal call_brother
 signal tool_picked(id: String)
 signal restart
 signal quit
+signal chosen(index: int)
+signal order(what: String)                 # day 2 orders to the other brother: "keep_busy", "tidy"
+signal end_action(key: String)             # a key on the ending card
 
 const ICONS := "res://assets/icons/%s.png"
 
@@ -37,6 +40,14 @@ var _toast_tween: Tween
 var _help: PanelContainer
 var _end: PanelContainer
 var _pause: PanelContainer
+var _choice: PanelContainer
+var _choice_title: Label
+var _choice_box: VBoxContainer
+var _choice_count := 0
+var _prompt2: HBoxContainer
+var _stress: ProgressBar
+var _cover_orders: Array[Button] = []
+var _end_keys: Array = []
 var _end_body: VBoxContainer
 var _step_card: PanelContainer
 var _step_title: Label
@@ -54,6 +65,7 @@ var _brothers: Control
 var _extra_panels: Array = []          # added from outside (the dialogue)
 
 func _ready() -> void:
+	layer = 5                                  # above the cut-scene bars: dialogue, choices and cards stay readable
 	_root = Control.new()
 	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -68,8 +80,9 @@ func _ready() -> void:
 	_build_install()
 	_build_end()
 	_build_pause()
+	_build_choice()
 	for pair in [[_jobs_panel, "Jobs"], [_prompt, "Prompt"], [_toast, "Toast"], [_help, "Help"], [_end, "EndCard"],
-			[_step_card, "StepCard"], [_tray, "ToolBag"], [_brothers, "Brothers"], [_pause, "Pause"]]:
+			[_step_card, "StepCard"], [_tray, "ToolBag"], [_brothers, "Brothers"], [_pause, "Pause"], [_choice, "Choice"]]:
 		pair[0].name = pair[1]
 	process_mode = Node.PROCESS_MODE_ALWAYS     # the pause menu works while the game is paused
 
@@ -225,6 +238,19 @@ func _job_row(job: Job, helper: String, auto: Job) -> Control:
 				send.modulate.a = 0.55)
 	return row
 
+## Day 2 after the accident the job list becomes the cover-up: `lines` are [colour, text] rows under
+## `title`, then the jobs still open (to send `helper` to, so the house keeps sounding like work).
+func set_objectives(title: String, lines: Array, open_jobs: Array = [], helper := "", auto: Job = null) -> void:
+	for c in _jobs_box.get_children():
+		_jobs_box.remove_child(c)
+		c.queue_free()
+	(_jobs_panel.get_child(0).get_child(0).get_child(0) as Label).text = title
+	_jobs_count.text = ""
+	for l in lines:
+		_jobs_box.add_child(_fold_line(l[0], l[1]))
+	for job in open_jobs:
+		_jobs_box.add_child(_job_row(job, helper, auto))
+
 # ---------------------------------------------------------------- the brothers
 
 func _build_brothers() -> void:
@@ -256,6 +282,9 @@ func _build_brothers() -> void:
 		h.add_child(t)
 		t.add_child(UiTheme.label(who, UiTheme.BODY))
 		var role := UiTheme.label("", UiTheme.CAPTION, UiTheme.MUTED)
+		role.clip_text = true                  # long orders end in "..." instead of widening the card
+		role.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		role.custom_minimum_size.x = 104
 		t.add_child(role)
 		cards.add_child(card)
 		_cards[who] = {"panel": card, "role": role}
@@ -265,6 +294,20 @@ func _build_brothers() -> void:
 	_follow_btn = _order_button("F", "Follow me", func(): toggle_follow.emit())
 	_orders.add_child(_follow_btn)
 	_orders.add_child(_order_button("H", "Come here", func(): call_brother.emit()))
+	var more := HBoxContainer.new()
+	more.alignment = BoxContainer.ALIGNMENT_END
+	v.add_child(more)
+	for o in [["K", "Keep busy", "keep_busy"], ["C", "Tidy", "tidy"]]:
+		var b := _order_button(o[0], o[1], func(): order.emit(o[2]))
+		b.visible = false
+		more.add_child(b)
+		_cover_orders.append(b)
+	_stress = ProgressBar.new()
+	_stress.show_percentage = false
+	_stress.custom_minimum_size = Vector2(0, 6)
+	_stress.tooltip_text = "Tomas's nerves"
+	_stress.visible = false
+	v.add_child(_stress)
 	var tab := UiTheme.key_hint("Tab", "switch", UiTheme.CAPTION)
 	tab.modulate.a = 0.75
 	tab.alignment = BoxContainer.ALIGNMENT_END
@@ -286,9 +329,20 @@ func set_brothers(you: String, other: String, other_doing: String, following: bo
 			UiTheme.person_color(who) if mine else Color(0, 0, 0, 0))
 		(c.panel as PanelContainer).add_theme_stylebox_override("panel", s)
 		(c.role as Label).text = "You" if mine else other_doing
+		(c.role as Label).tooltip_text = (c.role as Label).text
 	_follow_btn.text = "F   %s" % ("Wait here" if following else "Follow me")
-	for b in _orders.get_children():
+	for b in _orders.get_children() + _cover_orders:
 		(b as Button).add_theme_color_override("font_color", UiTheme.person_color(other))
+
+## Day 2 after the accident: the extra orders and Tomas's nerves (`stress` 0..100, < 0 hides the bar).
+func set_cover(on: bool, stress := -1.0) -> void:
+	for b in _cover_orders:
+		b.visible = on
+	_stress.visible = stress >= 0.0
+	if stress >= 0.0:
+		_stress.value = stress
+		var fill := UiTheme.panel(UiTheme.OK if stress < 60.0 else (UiTheme.ACCENT if stress < 90.0 else UiTheme.DANGER), 4, 0)
+		_stress.add_theme_stylebox_override("fill", fill)
 
 # ---------------------------------------------------------------- prompt, tips, help
 
@@ -313,16 +367,27 @@ func _build_prompt() -> void:
 	h.add_child(_prompt_key)
 	_prompt_text = UiTheme.label("", UiTheme.BODY)
 	h.add_child(_prompt_text)
+	_prompt2 = UiTheme.key_hint("P", "", UiTheme.BODY)
+	_prompt2.add_theme_constant_override("separation", 10)
+	h.add_child(_prompt2)
+	_prompt2.visible = false
 	_prompt.visible = false
 
-## The one thing you can do right now ("" hides it).
-func set_prompt(key: String, text: String) -> void:
+## The one thing you can do right now ("" hides it), and optionally a second one (`key2`, `text2`).
+func set_prompt(key: String, text: String, key2 := "", text2 := "") -> void:
 	_prompt.visible = text != ""
+	var second := text2 != ""
+	if _prompt2.visible != second or (second and (_prompt2.get_child(1) as Label).text != "   " + text2):
+		_prompt2.visible = second
+		if second:
+			((_prompt2.get_child(0) as PanelContainer).get_child(0) as Label).text = key2
+			(_prompt2.get_child(1) as Label).text = "   " + text2
+		_center.call_deferred(_prompt)
 	if text == "" or (_prompt_text.text == text and (_prompt_key.get_child(0) as Label).text == key):
 		return
 	(_prompt_key.get_child(0) as Label).text = key
 	_prompt_text.text = text
-	_prompt.reset_size()               # centred anchors growing both ways keep it in the middle
+	_center.call_deferred(_prompt)
 
 func _build_toast() -> void:
 	_toast = PanelContainer.new()
@@ -382,12 +447,15 @@ func _build_help() -> void:
 	v.add_child(grid)
 	for k in [["Click / WASD", "walk"], ["Shift", "run"], ["E", "use, lift, put down"], ["Tab", "switch brother"],
 			["Right click", "send the other one there"], ["F", "he follows / waits"], ["H", "call him over"],
-			["J", "fold the job list"], ["Q / R", "turn the view"], ["Wheel", "zoom"], ["1-9", "pick a tool"],
+			["J", "fold the job list"], ["Q / R", "turn the view"], ["L / P", "day 2: lift him / his phone"],
+				["K / C", "day 2: keep someone busy / tidy"], ["Wheel", "zoom"], ["1-9", "pick a tool"],
 			["Esc", "pause / stop working"], ["G", "graphics quality"], ["F1", "this help"]]:
 		grid.add_child(UiTheme.key_hint(k[0], k[1]))
 	_help.visible = false
 
 func toggle_help() -> void:
+	if _end.visible and not _help.visible:     # the end card has its own keys
+		return
 	_help.visible = not _help.visible
 	_jobs_panel.visible = not _help.visible and not _installing and not _end.visible
 	if _help.visible:
@@ -585,6 +653,53 @@ func show_end(title: String, cash: int, seen: Array, lesson: String, actions: Ar
 	_end.visible = true
 	_jobs_panel.visible = false
 
+# ---------------------------------------------------------------- choices
+
+func _build_choice() -> void:
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(center)
+	_choice = PanelContainer.new()
+	_choice.custom_minimum_size = Vector2(560, 0)
+	_choice.add_theme_stylebox_override("panel", UiTheme.panel(Color(0.05, 0.055, 0.07, 0.95), 14, 22))
+	center.add_child(_choice)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 10)
+	_choice.add_child(v)
+	_choice_title = UiTheme.label("", UiTheme.TITLE, UiTheme.ACCENT)
+	_choice_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_choice_title.custom_minimum_size.x = 516
+	v.add_child(_choice_title)
+	_choice_box = VBoxContainer.new()
+	_choice_box.add_theme_constant_override("separation", 6)
+	v.add_child(_choice_box)
+	_choice.visible = false
+
+## Shows `options` as numbered buttons (keys 1-9) under `title`; returns the index picked.
+func choose(title: String, options: Array) -> int:
+	_choice_title.text = title
+	for c in _choice_box.get_children():
+		_choice_box.remove_child(c)
+		c.queue_free()
+	for i in options.size():
+		var b := Button.new()
+		b.text = "%d    %s" % [i + 1, options[i]]
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.focus_mode = Control.FOCUS_NONE
+		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		b.custom_minimum_size.x = 516
+		b.pressed.connect(func(): chosen.emit(i))
+		_choice_box.add_child(b)
+	_choice_count = options.size()
+	_choice.visible = true
+	var picked: int = await chosen
+	_choice.visible = false
+	return picked
+
+func choosing() -> bool:
+	return _choice.visible
+
 # ---------------------------------------------------------------- pause
 
 func _build_pause() -> void:
@@ -607,7 +722,7 @@ func _build_pause() -> void:
 			["R", "Restart the day", func():
 				show_pause(false)
 				restart.emit()],
-			["Q", "Quit the game", func(): quit.emit()]]:
+			["Q", "Main menu", func(): quit.emit()]]:
 		var btn := Button.new()
 		btn.text = "%s     %s" % [b[0], b[1]]
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -624,7 +739,21 @@ func paused() -> bool:
 	return _pause.visible
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not _pause.visible or not (event is InputEventKey and event.pressed and not event.echo):
+	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	if _choice.visible and not _pause.visible:
+		var k: int = event.physical_keycode - KEY_1
+		if k >= 0 and k < _choice_count:
+			chosen.emit(k)
+			get_viewport().set_input_as_handled()
+		return
+	if _end.visible and not _pause.visible:
+		for a in _end_keys:
+			if OS.find_keycode_from_string(a) == event.physical_keycode:
+				end_action.emit(a)
+				get_viewport().set_input_as_handled()
+				return
+	if not _pause.visible:
 		return
 	match event.physical_keycode:
 		KEY_ESCAPE:
@@ -649,6 +778,46 @@ func _center(c: Control, vertical := false) -> void:
 		c.offset_bottom = m.y / 2.0
 	c.reset_size()
 
+## The end of day 2: the ending's title and text, the police checks (PASS / DOUBT / FAIL with reasons),
+## and the keys to go on. `checks` are Investigation check dictionaries.
+func show_ending(title: String, lines: Array, checks: Array, actions: Array) -> void:
+	for c in _end_body.get_children():
+		c.queue_free()
+	_end_body.add_child(UiTheme.label(title, UiTheme.HEADLINE, UiTheme.ACCENT))
+	for l in lines:
+		var t := UiTheme.label(l, UiTheme.BODY)
+		t.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		t.custom_minimum_size.x = 600
+		_end_body.add_child(t)
+	if not checks.is_empty():
+		_end_body.add_child(UiTheme.label("What the police found", UiTheme.TITLE))
+		for c in checks:
+			var row := HBoxContainer.new()
+			var verdict := "PASS" if c.ok else ("FAIL" if c.major else "DOUBT")
+			var col := UiTheme.OK if c.ok else (UiTheme.DANGER if c.major else UiTheme.ACCENT)
+			var v := UiTheme.label(verdict, UiTheme.CAPTION + 1, col)
+			v.custom_minimum_size.x = 56
+			row.add_child(v)
+			var n := UiTheme.label(c.name, UiTheme.CAPTION + 1)
+			n.custom_minimum_size.x = 76
+			row.add_child(n)
+			var why := UiTheme.label(" ".join(c.lines), UiTheme.CAPTION + 1, UiTheme.MUTED)
+			why.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			why.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			why.custom_minimum_size.x = 440
+			row.add_child(why)
+			_end_body.add_child(row)
+	var keys := HBoxContainer.new()
+	keys.add_theme_constant_override("separation", 24)
+	_end_keys = []
+	for a in actions:
+		keys.add_child(UiTheme.key_hint(a[0], a[1]))
+		_end_keys.append(a[0])
+	_end_body.add_child(keys)
+	_end.visible = true
+	_jobs_panel.visible = false
+	_prompt.visible = false
+
 func end_visible() -> bool:
 	return _end.visible
 
@@ -664,12 +833,22 @@ func install_safe_rect() -> Rect2:
 ## The top-level panels showing now (play-test: none may overlap another).
 func top_panels() -> Array:
 	var out := []
-	for c in [_jobs_panel, _prompt, _toast, _help, _end, _step_card, _tray, _brothers, _pause] + _extra_panels:
+	for c in [_jobs_panel, _prompt, _toast, _help, _end, _step_card, _tray, _brothers, _pause, _choice] + _extra_panels:
 		if c != null and c.is_visible_in_tree() and c.modulate.a > 0.05:
 			out.append(c)
 	var status := _clock.get_parent().get_parent() as Control
 	out.append(status)
 	return out
+
+## Cut-scenes: only the dialogue, choices and cards stay on screen.
+func set_cinematic(on: bool) -> void:
+	for c in [_jobs_panel, _brothers, _prompt, _toast, _clock.get_parent().get_parent()]:
+		(c as CanvasItem).visible = not on if c != _prompt else false
+	for c in _root.get_children():
+		if c is HBoxContainer:                 # the F1 chip
+			c.visible = not on
+	if not on:
+		_jobs_panel.visible = not _end.visible
 
 ## Screen rectangles of the panels that are showing (the play-test keeps hotspots out from under them).
 func blocking_rects() -> Array[Rect2]:

@@ -13,6 +13,8 @@ signal finished(job: Job)
 signal cancelled(job: Job)
 signal mistake(at: Vector3, loud: bool, what: String)
 signal changed                             # step, progress, selection or message changed (redraw the HUD)
+signal started(job: Job)
+signal spot_done(job: Job, step: int, done: int)   # a hotspot (or a held step) is finished
 
 const PICK_PX := 34.0                      # how close the mouse must be to a hotspot, in pixels
 const ACTION_SECONDS := 0.75               # one hotspot: the clip plays, then the piece appears
@@ -25,6 +27,7 @@ const EQUIPMENT := {
 	"screwdriver": "Screwdriver", "stripper": "Wire stripper", "taping": "Tape + knife", "mud": "Joint mud",
 	"mallet": "Mallet", "wrench": "Wrench", "allen": "Allen key", "level": "Spirit level",
 	"sheet": "Drywall sheet", "planks": "Laminate", "underlay": "Underlay", "plate": "Socket cover",
+	"nailgun": "Nail gun", "fitting": "Lamp fitting",
 }
 
 var job: Job
@@ -41,6 +44,10 @@ var worksite: Worksite
 var cam: IsoCamera
 var safe_rect: Callable                    # -> Rect2: the screen the HUD leaves free for the hotspots
 var people: Array = []                     # everyone in the house: faded out while in front of the work
+var sfx: Sfx
+var _hold_sound := 0.0
+
+const TOOL_SOUND := {"drill": "drill", "screwdriver": "screwdriver", "hammer": "hammer", "mallet": "hammer", "nailgun": "nailgun"}
 
 var _spots: Array = []
 var _done: Array[bool] = []
@@ -75,6 +82,7 @@ func start(j: Job, w: Actor, h: Actor, ws: Worksite, c: IsoCamera) -> void:
 	step = 0
 	_active = true
 	_begin_step()
+	started.emit(j)
 
 func current() -> Dictionary:
 	return job.steps[step] if _active else {}
@@ -113,6 +121,8 @@ func use_spot(i: int) -> void:
 		return
 	_pending = i
 	_acting = ACTION_SECONDS
+	if sfx and TOOL_SOUND.has(selected):
+		sfx.play(TOOL_SOUND[selected], _spots[i], -4.0)
 	worker.face(_spots[i])
 	worker.work(Worksite.anim_for(selected, _spots[i].y - worker.global_position.y), selected)
 	if helper:
@@ -133,6 +143,8 @@ func _right_tool(s: Dictionary) -> bool:
 		return false
 	if selected != s.tool:
 		var loud := selected == "hammer"
+		if loud and sfx:
+			sfx.play("hammer", worker.global_position)
 		_say("Not the %s for this.%s" % [EQUIPMENT[selected].to_lower(), " And everyone heard that." if loud else ""], true)
 		show_tool = true
 		mistake.emit(worker.global_position, loud, "a loud bang")
@@ -199,11 +211,17 @@ func _process(delta: float) -> void:
 			if helper:
 				helper.work("", "")
 			_markers[i].material_override = _mat_done
+			var at_step := step
 			_after_spot()
+			spot_done.emit(job, at_step, _count_done(at_step))
 	elif s.kind == "hold":
 		var holding := (Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and hover == 0) or Input.is_physical_key_pressed(KEY_E)
 		if holding and _right_tool_quiet(s):
 			_hold += delta
+			_hold_sound -= delta
+			if _hold_sound <= 0.0 and sfx and TOOL_SOUND.has(selected):
+				_hold_sound = 0.85
+				sfx.play(TOOL_SOUND[selected], _spots[0], -6.0)
 			worker.face(_spots[0])
 			worker.work(Worksite.anim_for(selected, _spots[0].y - worker.global_position.y), selected)
 			worksite.apply(job.id, step, 0, hold_ratio())
@@ -211,7 +229,9 @@ func _process(delta: float) -> void:
 			if _hold >= float(s.seconds):
 				_done[0] = true
 				worker.work("", selected)
+				var at_step := step
 				_after_spot()
+				spot_done.emit(job, at_step, 1)
 		else:
 			worker.work("", selected)
 	for k in _markers.size():
@@ -248,6 +268,12 @@ func _right_tool_quiet(s: Dictionary) -> bool:
 		if message == "":
 			_right_tool(s)
 	return false
+
+## Hotspots finished in `at_step` (all of them once the view has moved on to the next step).
+func _count_done(at_step: int) -> int:
+	if at_step != step:
+		return 1 << 20
+	return progress().x
 
 func _after_spot() -> void:
 	if _done.all(func(d): return d):

@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="StageScenario" format=3]
+
+[ext_resource type="Script" path="res://scripts/stage_scenario.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "bathroom"
+title = "Slipped in the upstairs bathroom"
+story = "He slipped on the wet tiles getting out of the bath and hit his head."
+room = "Upstairs bathroom"
+level = 1
+area = Rect2(11.4, 0.9, 3.4, 2.8)
+mark = Vector3(13.0, 2.9, 2.3)
+explains = PackedStringArray("blunt")
+fits_heard = PackedStringArray("Upstairs bathroom", "Upstairs hall", "Daniel's room", "Storage", "Landing")
+setup = [{"id": "water", "text": "Splash water from the bath over the tiles", "at": Vector3(14.2, 2.9, 1.3), "seconds": 2.0, "needs": ""}, {"id": "towel", "text": "Drop a towel on the floor", "at": Vector3(12.3, 2.9, 1.2), "seconds": 1.5, "needs": ""}]

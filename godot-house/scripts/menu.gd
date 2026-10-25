@@ -1,0 +1,176 @@
+extends Node3D
+## The title screen: the house turning slowly at dusk behind the menu. A content warning the first time;
+## Day 1 (the first job), Day 2 (the accident; unlocked once day 1 is done), options (soften the accident
+## close-ups, volume, graphics) and quit. Command-line runs (--selftest, --playtest, --day=N) skip
+## straight to the game.
+
+var gfx: Graphics
+var house: House
+var cam: Camera3D
+var sfx: Sfx
+var _angle := 0.6
+var _root: Control
+var _main_box: VBoxContainer
+var _warning: PanelContainer
+var _options: PanelContainer
+var _day2: Button
+var _soften: CheckButton
+
+func _ready() -> void:
+	var args := OS.get_cmdline_user_args()
+	for a in args:
+		if a in ["--selftest", "--playtest"] or a.begins_with("--day="):
+			get_tree().change_scene_to_file.call_deferred("res://scenes/main.tscn")
+			return
+	Game.load_save()
+	gfx = Graphics.new()
+	add_child(gfx)
+	gfx.build_environment(self)
+	gfx.sun.rotation_degrees = Vector3(-14, 60, 0)
+	gfx.sun.light_color = Color(1.0, 0.72, 0.5)
+	gfx.load_level("", true)
+	house = House.new()
+	add_child(house)
+	house.build(gfx)
+	house.upper.visible = true
+	cam = Camera3D.new()
+	cam.fov = 30
+	add_child(cam)
+	sfx = Sfx.new()
+	add_child(sfx)
+	sfx.loop("yard_loop", true, -12.0)
+	sfx.loop("music_day_loop", true, -8.0, false)
+	_build_ui()
+	if not Game.seen_warning:
+		_warning.visible = true
+		_main_box.get_parent().visible = false
+
+func _process(delta: float) -> void:
+	_angle += delta * 0.05
+	var centre := Vector3(8, 1.5, 6)
+	cam.look_at_from_position(centre + Vector3(sin(_angle) * 26, 15, cos(_angle) * 26), centre)
+
+func _build_ui() -> void:
+	var layer := CanvasLayer.new()
+	add_child(layer)
+	_root = Control.new()
+	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_root.theme = UiTheme.build()
+	layer.add_child(_root)
+	var shade := ColorRect.new()
+	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	shade.color = Color(0, 0, 0, 0.35)
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(shade)
+
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UiTheme.panel(Color(0.05, 0.055, 0.07, 0.88), 16, 28))
+	panel.position = Vector2(64, 120)
+	panel.custom_minimum_size = Vector2(400, 0)
+	_root.add_child(panel)
+	_main_box = VBoxContainer.new()
+	_main_box.add_theme_constant_override("separation", 12)
+	panel.add_child(_main_box)
+	_main_box.add_child(UiTheme.label("Off the Books", UiTheme.HEADLINE + 14, UiTheme.TEXT))
+	var sub := UiTheme.label("Two brothers. Cash in hand. One house, two days.", UiTheme.BODY, UiTheme.MUTED)
+	_main_box.add_child(sub)
+	_main_box.add_child(HSeparator.new())
+	_main_box.add_child(_button("Day 1: The first job", func(): _play(1)))
+	_day2 = _button("Day 2: Daniel's room" if Game.day2_unlocked else "Day 2: finish day 1 first", func(): _play(2))
+	_day2.disabled = not Game.day2_unlocked
+	_main_box.add_child(_day2)
+	_main_box.add_child(_button("Options", func(): _options.visible = not _options.visible))
+	_main_box.add_child(_button("Quit", func(): get_tree().quit()))
+	_main_box.add_child(UiTheme.label("18+  ·  contains death and its concealment", UiTheme.CAPTION, UiTheme.MUTED))
+
+	_options = PanelContainer.new()
+	_options.add_theme_stylebox_override("panel", UiTheme.panel(Color(0.05, 0.055, 0.07, 0.9), 14, 22))
+	_options.position = Vector2(500, 120)
+	_options.custom_minimum_size = Vector2(380, 0)
+	_root.add_child(_options)
+	var ov := VBoxContainer.new()
+	ov.add_theme_constant_override("separation", 12)
+	_options.add_child(ov)
+	ov.add_child(UiTheme.label("Options", UiTheme.TITLE, UiTheme.ACCENT))
+	_soften = CheckButton.new()
+	_soften.text = "Soften the accident (cut to black)"
+	_soften.button_pressed = Game.soften
+	_soften.toggled.connect(func(on: bool):
+		Game.soften = on
+		Game.save())
+	ov.add_child(_soften)
+	var vol_row := HBoxContainer.new()
+	vol_row.add_child(UiTheme.label("Volume", UiTheme.BODY))
+	var vol := HSlider.new()
+	vol.min_value = 0.0
+	vol.max_value = 1.0
+	vol.step = 0.05
+	vol.value = Game.volume
+	vol.custom_minimum_size.x = 220
+	vol.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vol.value_changed.connect(func(v: float):
+		Game.volume = v
+		sfx.set_volume(v)
+		Game.save())
+	vol_row.add_child(vol)
+	ov.add_child(vol_row)
+	var gfx_btn := _button("Graphics: " + Graphics.NAMES[gfx.level], func(): pass)
+	gfx_btn.pressed.connect(func():
+		gfx.cycle()
+		gfx_btn.text = "Graphics: " + Graphics.NAMES[gfx.level])
+	ov.add_child(gfx_btn)
+	_options.visible = false
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_root.add_child(center)
+	_warning = PanelContainer.new()
+	_warning.add_theme_stylebox_override("panel", UiTheme.panel(Color(0.04, 0.04, 0.05, 0.97), 16, 32))
+	_warning.custom_minimum_size = Vector2(640, 0)
+	center.add_child(_warning)
+	var wv := VBoxContainer.new()
+	wv.add_theme_constant_override("separation", 14)
+	_warning.add_child(wv)
+	wv.add_child(UiTheme.label("Before you play", UiTheme.HEADLINE, UiTheme.ACCENT))
+	var text := UiTheme.label("Off the Books is a story for adults. It shows the accidental death of a teenager, and two undocumented workers who hide what happened because they are sure nobody would believe them.\n\nThe accident is shown in a short close-up. You can soften it (it cuts to black) here or in Options at any time.\n\nThe ways of hiding things in this game are made-up game rules, not real methods.", UiTheme.BODY)
+	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	text.custom_minimum_size.x = 576
+	wv.add_child(text)
+	var soft := CheckButton.new()
+	soft.text = "Soften the accident"
+	soft.button_pressed = Game.soften
+	soft.toggled.connect(func(on: bool):
+		Game.soften = on
+		_soften.button_pressed = on)
+	wv.add_child(soft)
+	wv.add_child(_button("I understand  (Enter)", _accept_warning))
+	_warning.visible = false
+
+func _accept_warning() -> void:
+	Game.seen_warning = true
+	Game.save()
+	_warning.visible = false
+	_main_box.get_parent().visible = true
+
+func _button(text: String, on: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.custom_minimum_size = Vector2(0, 40)
+	b.add_theme_font_size_override("font_size", UiTheme.TITLE)
+	b.pressed.connect(func():
+		sfx.play("click")
+		on.call())
+	return b
+
+func _play(day: int) -> void:
+	Game.day = day
+	Game.case_id = ""
+	get_tree().change_scene_to_file("res://scenes/main.tscn")
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		if _warning.visible and event.physical_keycode in [KEY_ENTER, KEY_KP_ENTER]:
+			_accept_warning()
+		elif event.physical_keycode == KEY_ESCAPE and _options.visible:
+			_options.visible = false

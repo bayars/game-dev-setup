@@ -13,6 +13,7 @@ var pay := 60
 var carry: Carryable = null        # carry jobs: bring `carry` to `carry_target`
 var carry_target := Vector3.ZERO
 var progress := 0.0                # auto work by the other brother, 0..1
+var auto_only := false             # only for the other brother (sent from the list); never finishes
 var done := false
 
 func _init(job_id: String, job_title: String, at: Vector3) -> void:

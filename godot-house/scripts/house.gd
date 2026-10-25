@@ -145,11 +145,12 @@ func build(gfx: Graphics) -> void:
 		var look: Array = FLOOR_LOOK[r[0]]
 		var mat := gfx.pbr(look[0], 1.3, look[1])
 		if r[2] == 0:
-			_static_box(self, Vector3(rect.size.x, 0.04, rect.size.y), Vector3(rect.get_center().x, 0.02, rect.get_center().y), mat)
+			var f := _static_box(self, Vector3(rect.size.x, 0.04, rect.size.y), Vector3(rect.get_center().x, 0.02, rect.get_center().y), mat)
+			_thicken(f, 0.5)
 		elif r[0] == "Landing":
 			_slab_with_hole(rect, Rect2(STAIR_X1, STAIR_Z0, STAIR_X0 - STAIR_X1, STAIR_Z1 - STAIR_Z0), mat)
 		else:
-			_static_box(upper, Vector3(rect.size.x, SLAB, rect.size.y), Vector3(rect.get_center().x, H + SLAB / 2, rect.get_center().y), mat)
+			_thicken(_static_box(upper, Vector3(rect.size.x, SLAB, rect.size.y), Vector3(rect.get_center().x, H + SLAB / 2, rect.get_center().y), mat), 0.25)
 	_static_box(self, Vector3(5, 0.03, 9), Vector3(4, 0.015, 16.5), gfx.pbr("stone", 2.5, Color(0.6, 0.6, 0.62)))  # driveway
 	for w in WALLS:
 		_wall(w[0], w[1], w[2], w[3], w[4] if w.size() > 4 else H)
@@ -333,6 +334,15 @@ func _static_box(parent: Node, size: Vector3, pos: Vector3, material: Material, 
 	parent.add_child(body)
 	return body
 
+## Makes a floor's collider `extra` metres deeper below its surface (the drawn floor stays as it is), so a
+## falling ragdoll cannot pass through a thin board.
+func _thicken(body: StaticBody3D, extra: float) -> void:
+	var cs := body.get_child(0) as CollisionShape3D
+	var box := (cs.shape as BoxShape3D).duplicate() as BoxShape3D
+	box.size.y += extra
+	cs.shape = box
+	cs.position.y -= extra / 2.0
+
 ## An upper-floor slab over `rect` with the stairwell `hole` left open.
 func _slab_with_hole(rect: Rect2, hole: Rect2, material: Material) -> void:
 	var parts := [
@@ -342,7 +352,7 @@ func _slab_with_hole(rect: Rect2, hole: Rect2, material: Material) -> void:
 	]
 	for p in parts:
 		if p.size.x > 0.01 and p.size.y > 0.01:
-			_static_box(upper, Vector3(p.size.x, SLAB, p.size.y), Vector3(p.get_center().x, H + SLAB / 2, p.get_center().y), material)
+			_thicken(_static_box(upper, Vector3(p.size.x, SLAB, p.size.y), Vector3(p.get_center().x, H + SLAB / 2, p.get_center().y), material), 0.25)
 
 ## Rounded steps to look at, and one smooth ramp underneath to walk on (and to bake the navmesh from).
 func _stairs() -> void:

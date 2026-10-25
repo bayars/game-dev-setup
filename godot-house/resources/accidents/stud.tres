@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="AccidentCase" format=3]
+
+[ext_resource type="Script" path="res://scripts/accident_case.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "stud"
+title = "The falling stud"
+job_id = "closet_studs"
+step = 1
+after_spots = 4
+what = "stud"
+injury = "blunt"
+noise_radius = 11.0
+noise_what = "a heavy crash"
+daniel_at = Vector3(6.8, 2.9, 3.8)
+fall = Vector3(-4.0, 0.0, 0.6)
+tokens = [{"id": "stud", "label": "The fallen stud", "offset": Vector3(0.35, 0.0, 0.1), "seconds": 4.0, "item": "", "main": true}, {"id": "scuffs", "label": "Scuffed floorboards", "offset": Vector3(-0.5, 0.0, 0.4), "seconds": 3.0, "item": "", "main": false}]
+before = [["Daniel", "I'll hold the next one. Look, I've got it."], ["Nico", "Stand back from the frame, the first one isn't fixed at the top yet."]]
+after = [["Nico", "Daniel? ...Daniel!"], ["Tomas", "(running up the stairs) What was that? ...Oh no. No, no, no."], ["Tomas", "He's not breathing, Nico. He's not breathing."]]

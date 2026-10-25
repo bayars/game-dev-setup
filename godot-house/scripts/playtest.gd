@@ -135,7 +135,11 @@ func _tour() -> void:
 ## checks each hotspot where the camera shows it.
 func _check_install() -> void:
 	var jobs: Dictionary = main.jobs
-	for id in ["studs", "wiring", "drywall", "flooring", "dishwasher_in", "dishwasher", "couch_in", "assemble", "measure"]:
+	var order: Array = ["studs", "wiring", "drywall", "flooring", "dishwasher_in", "dishwasher", "couch_in", "assemble", "measure"]
+	if main.day == 2:
+		order = ["closet_studs", "closet_drywall", "skirting", "light"]
+		main.story.phase = Story2.Phase.END        # no accident: only the views are checked here
+	for id in order:
 		var job: Job = jobs[id]
 		if job.carry != null:                    # deliver the load where it belongs
 			job.carry.position = job.carry_target + Vector3(0, Worksite.FLOOR, 0)

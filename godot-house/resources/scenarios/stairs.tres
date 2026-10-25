@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="StageScenario" format=3]
+
+[ext_resource type="Script" path="res://scripts/stage_scenario.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "stairs"
+title = "Fell down the stairs"
+story = "He tripped on the laundry basket at the top of the stairs and fell all the way down."
+room = "Stairs"
+level = 0
+area = Rect2(13.9, 9.0, 2.1, 2.9)
+mark = Vector3(15.0, 0.0, 10.0)
+explains = PackedStringArray("blunt", "crush")
+fits_heard = PackedStringArray("Stairs", "Landing", "Upstairs hall", "Daniel's room", "Sofia's room", "Parents' room", "Storage", "Upstairs bathroom", "Hallway")
+setup = [{"id": "basket", "text": "Tip the laundry basket over at the top of the stairs", "at": Vector3(10.3, 2.9, 11.0), "seconds": 2.0, "needs": ""}]

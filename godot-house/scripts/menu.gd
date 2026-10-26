@@ -14,6 +14,8 @@ var _main_box: VBoxContainer
 var _warning: PanelContainer
 var _options: PanelContainer
 var _day2: Button
+var _first: Button          # Day 1, focused so arrows and Enter work too
+var _understood: Button
 var _soften: CheckButton
 
 func _ready() -> void:
@@ -42,8 +44,9 @@ func _ready() -> void:
 	sfx.loop("music_day_loop", true, -8.0, false)
 	_build_ui()
 	if not Game.seen_warning and not "--menu-preview" in args:
-		_warning.visible = true
-		_main_box.get_parent().visible = false
+		_show_warning()
+	else:
+		_first.grab_focus()
 
 func _exit_tree() -> void:
 	RoundBox.clear_cache()
@@ -60,6 +63,7 @@ func _build_ui() -> void:
 	_root = Control.new()
 	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.theme = UiTheme.build()
+	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_root)
 	var shade := ColorRect.new()
 	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -79,7 +83,8 @@ func _build_ui() -> void:
 	var sub := UiTheme.label("Two brothers. Cash in hand. One house, two days.", UiTheme.BODY, UiTheme.MUTED)
 	_main_box.add_child(sub)
 	_main_box.add_child(HSeparator.new())
-	_main_box.add_child(_button("Day 1: The first job", func(): _play(1)))
+	_first = _button("Day 1: The first job", func(): _play(1))
+	_main_box.add_child(_first)
 	_day2 = _button("Day 2: Daniel's room" if Game.day2_unlocked else "Day 2: finish day 1 first", func(): _play(2))
 	_day2.disabled = not Game.day2_unlocked
 	_main_box.add_child(_day2)
@@ -127,6 +132,7 @@ func _build_ui() -> void:
 
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE   # full screen and on top: it must not take the menu's clicks
 	_root.add_child(center)
 	_warning = PanelContainer.new()
 	_warning.add_theme_stylebox_override("panel", UiTheme.panel(Color(0.04, 0.04, 0.05, 0.97), 16, 32))
@@ -147,14 +153,21 @@ func _build_ui() -> void:
 		Game.soften = on
 		_soften.button_pressed = on)
 	wv.add_child(soft)
-	wv.add_child(_button("I understand  (Enter)", _accept_warning))
+	_understood = _button("I understand  (Enter)", _accept_warning)
+	wv.add_child(_understood)
 	_warning.visible = false
+
+func _show_warning() -> void:
+	_warning.visible = true
+	_main_box.get_parent().visible = false
+	_understood.grab_focus()
 
 func _accept_warning() -> void:
 	Game.seen_warning = true
 	Game.save()
 	_warning.visible = false
 	_main_box.get_parent().visible = true
+	_first.grab_focus()
 
 func _button(text: String, on: Callable) -> Button:
 	var b := Button.new()

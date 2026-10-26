@@ -106,6 +106,12 @@ func run() -> void:
 		return _fail("ending %s, expected %s (%s)" % [story.ending, want, " | ".join(why)])
 	if not main.hud.end_visible():
 		return _fail("no ending card")
+	var keys: Array = main.hud.end_buttons().map(func(b): return b.text.get_slice(" ", 0))
+	var want_keys: Array = ["N", "M"] if story.ending in Investigation.GOT_AWAY else ["R", "N", "M"]
+	if keys != want_keys:
+		return _fail("ending card buttons %s, expected %s" % [keys, want_keys])
+	if not Game.day2_done:
+		return _fail("day 2 not marked as played")
 	if not _overlaps.is_empty():
 		return _fail("HUD panels overlap: " + ", ".join(_overlaps.keys()))
 	print("SELFTEST_OK day2 case=%s plan=%s ending=%s found_by=%s minutes=%d" % [case.id, plan, story.ending,

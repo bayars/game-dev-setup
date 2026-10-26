@@ -645,11 +645,7 @@ func show_end(title: String, cash: int, seen: Array, lesson: String, actions: Ar
 		var l := UiTheme.label(lesson, UiTheme.BODY, UiTheme.ACCENT)
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		_end_body.add_child(l)
-	var keys := HBoxContainer.new()
-	keys.add_theme_constant_override("separation", 24)
-	for a in actions:
-		keys.add_child(UiTheme.key_hint(a[0], a[1]))
-	_end_body.add_child(keys)
+	_end_actions(actions, "")
 	_end.visible = true
 	_jobs_panel.visible = false
 
@@ -780,7 +776,7 @@ func _center(c: Control, vertical := false) -> void:
 
 ## The end of day 2: the ending's title and text, the police checks (PASS / DOUBT / FAIL with reasons),
 ## and the keys to go on. `checks` are Investigation check dictionaries.
-func show_ending(title: String, lines: Array, checks: Array, actions: Array) -> void:
+func show_ending(title: String, lines: Array, checks: Array, actions: Array, question := "") -> void:
 	for c in _end_body.get_children():
 		c.queue_free()
 	_end_body.add_child(UiTheme.label(title, UiTheme.HEADLINE, UiTheme.ACCENT))
@@ -807,16 +803,32 @@ func show_ending(title: String, lines: Array, checks: Array, actions: Array) -> 
 			why.custom_minimum_size.x = 440
 			row.add_child(why)
 			_end_body.add_child(row)
-	var keys := HBoxContainer.new()
-	keys.add_theme_constant_override("separation", 24)
-	_end_keys = []
-	for a in actions:
-		keys.add_child(UiTheme.key_hint(a[0], a[1]))
-		_end_keys.append(a[0])
-	_end_body.add_child(keys)
+	_end_actions(actions, question)
 	_end.visible = true
 	_jobs_panel.visible = false
 	_prompt.visible = false
+
+## The ways on from an end card: a button per [key, text] (click it or press the key), under an optional
+## question ("Try again?"). Both emit `end_action`.
+func _end_actions(actions: Array, question: String) -> void:
+	if question != "":
+		_end_body.add_child(UiTheme.label(question, UiTheme.TITLE, UiTheme.ACCENT))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	_end_keys = []
+	for a in actions:
+		var btn := Button.new()
+		btn.text = "%s     %s" % [a[0], a[1]]
+		btn.focus_mode = Control.FOCUS_NONE
+		var key: String = a[0]
+		btn.pressed.connect(func(): end_action.emit(key))
+		row.add_child(btn)
+		_end_keys.append(key)
+	_end_body.add_child(row)
+
+## The buttons on the end card (tests click them).
+func end_buttons() -> Array:
+	return _end_body.find_children("*", "Button", true, false) if _end.visible else []
 
 func end_visible() -> bool:
 	return _end.visible

@@ -587,17 +587,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_Q:
 				cam.rotate_step(-1)
 			KEY_R:
-				if day_over:
-					get_tree().reload_current_scene()
-				else:
+				if not hud.end_visible():
 					cam.rotate_step(1)
-			KEY_N:
-				if day_over:
-					Game.day = 2
-					get_tree().reload_current_scene()
-			KEY_M:
-				if day_over:
-					get_tree().change_scene_to_file("res://scenes/menu.tscn")
 			KEY_G:
 				gfx.cycle()
 			KEY_ESCAPE:
@@ -781,13 +772,14 @@ func _refresh_board() -> void:
 		hud.set_jobs(jobs, o.display_name, _auto_job)
 	hud.set_brothers(current.display_name, o.display_name, doing, follow)
 
-## Keys on the day 2 ending card.
+## The end card's buttons (or keys). Day 1: N day 2, R day 1 again. Day 2: R the same case, N another.
 func _on_end_action(key: String) -> void:
 	match key:
 		"R":
-			Game.case_id = story.case.id
+			Game.case_id = story.case.id if story else ""
 			get_tree().reload_current_scene()
 		"N":
+			Game.day = 2
 			Game.case_id = ""
 			get_tree().reload_current_scene()
 		"M":
@@ -826,9 +818,13 @@ func _end_day() -> void:
 			seen.append([r.display_name, line])
 	Game.day2_unlocked = true
 	Game.save()
+	var actions := [["N", "Go on to day 2"]]
+	if Game.day2_done:                         # replaying day 1 is for players who have seen day 2
+		actions.append(["R", "Play day 1 again"])
+	actions.append(["M", "Main menu"])
 	hud.show_end("Day 1 done", cash, seen,
 		"Noise is remembered. Tomorrow, carry heavy things together." if not seen.is_empty() else "Good, quiet work.",
-		[["N", "Day 2"], ["R", "Play day 1 again"], ["M", "Main menu"]])
+		actions)
 
 # ---------------------------------------------------------------- self-test
 
@@ -979,6 +975,10 @@ func _run_selftest() -> void:
 		total += job.pay
 	if cash != total:
 		return _fail("pay %d, expected %d" % [cash, total])
+	var keys: Array = hud.end_buttons().map(func(b): return b.text.get_slice(" ", 0))
+	var want_keys: Array = ["N", "R", "M"] if Game.day2_done else ["N", "M"]   # replay once day 2 has been seen
+	if keys != want_keys:
+		return _fail("day 1 end card buttons %s, expected %s" % [keys, want_keys])
 	print("SELFTEST_OK day1 cash=$%d noticed=%d (%s)" % [cash, _heard_count(), linda.noticed])
 	get_tree().quit(0)
 

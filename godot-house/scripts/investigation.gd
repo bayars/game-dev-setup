@@ -26,6 +26,7 @@ extends RefCounted
 
 const STRESS_BREAK := 90.0
 const STRESS_SHAKY := 60.0
+const GOT_AWAY := ["clean", "shadow"]      # every other ending is a failed day: the card asks to try again
 
 const ENDINGS := {
 	"clean": ["Ruled an accident",

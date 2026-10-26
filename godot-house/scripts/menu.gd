@@ -1,7 +1,8 @@
 extends Node3D
 ## The title screen: the house turning slowly at dusk behind the menu. A content warning the first time;
-## Day 1 (the first job), Day 2 (the accident; unlocked once day 1 is done), options (soften the accident
-## close-ups, volume, graphics) and quit. Command-line runs (--selftest, --playtest, --day=N) skip
+## then Play (day 1) for a new player, Continue (day 2) once day 1 is done, and a choice of either day
+## once day 2 has been played to an ending; options (soften the accident close-ups, volume, graphics)
+## and quit. Command-line runs (--selftest, --playtest, --day=N) skip
 ## straight to the game.
 
 var gfx: Graphics
@@ -13,8 +14,7 @@ var _root: Control
 var _main_box: VBoxContainer
 var _warning: PanelContainer
 var _options: PanelContainer
-var _day2: Button
-var _first: Button          # Day 1, focused so arrows and Enter work too
+var _first: Button          # the first way in, focused so arrows and Enter work too
 var _understood: Button
 var _soften: CheckButton
 
@@ -83,11 +83,12 @@ func _build_ui() -> void:
 	var sub := UiTheme.label("Two brothers. Cash in hand. One house, two days.", UiTheme.BODY, UiTheme.MUTED)
 	_main_box.add_child(sub)
 	_main_box.add_child(HSeparator.new())
-	_first = _button("Day 1: The first job", func(): _play(1))
-	_main_box.add_child(_first)
-	_day2 = _button("Day 2: Daniel's room" if Game.day2_unlocked else "Day 2: finish day 1 first", func(): _play(2))
-	_day2.disabled = not Game.day2_unlocked
-	_main_box.add_child(_day2)
+	for s in story_buttons():
+		var day: int = s[1]
+		var b := _button(s[0], func(): _play(day))
+		_main_box.add_child(b)
+		if _first == null:
+			_first = b
 	_main_box.add_child(_button("Options", func(): _options.visible = not _options.visible))
 	_main_box.add_child(_button("Quit", func(): get_tree().quit()))
 	_main_box.add_child(UiTheme.label("18+  ·  contains death and its concealment", UiTheme.CAPTION, UiTheme.MUTED))
@@ -161,6 +162,15 @@ func _show_warning() -> void:
 	_warning.visible = true
 	_main_box.get_parent().visible = false
 	_understood.grab_focus()
+
+## The ways into the story, [text, day], from the save: a first-time player only gets day 1, after
+## day 1 the story continues with day 2, and once day 2 has been played to an ending either day.
+static func story_buttons() -> Array:
+	if Game.day2_done:
+		return [["Day 1: The first job", 1], ["Day 2: Daniel's room", 2]]
+	if Game.day2_unlocked:
+		return [["Continue: day 2", 2]]
+	return [["Play", 1]]
 
 func _accept_warning() -> void:
 	Game.seen_warning = true

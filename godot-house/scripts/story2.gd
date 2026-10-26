@@ -353,12 +353,17 @@ func _end(id: String, checks: Array) -> void:
 	phase = Phase.END
 	ending = id
 	Game.runs += 1
+	Game.day2_done = true                      # from now on the menu offers both days
 	Game.save()
 	cine.clear_beats()
 	cine.fade(0.82, 0.8)                       # the house stays faintly behind the card
 	var e: Array = Investigation.ENDINGS[id]
 	var lines: Array = Day2.TRUTH if id == "truth" else e[1]
-	main.hud.show_ending(e[0], lines, checks, [["R", "Same case again"], ["N", "Next case"], ["M", "Main menu"]])
+	if id in Investigation.GOT_AWAY:
+		main.hud.show_ending(e[0], lines, checks, [["N", "Play a different accident"], ["M", "Main menu"]])
+	else:
+		main.hud.show_ending(e[0], lines, checks,
+			[["R", "Yes, the same morning"], ["N", "Yes, a different accident"], ["M", "No, main menu"]], "Try again?")
 	main.hud.set_cover(false)
 	finished.emit(id)
 

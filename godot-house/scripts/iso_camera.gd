@@ -1,7 +1,7 @@
 class_name IsoCamera
 extends Node3D
 ## Isometric-style camera on the 3D scene: a long lens high above at 45 degrees, following a target.
-## Q/R rotate in 90-degree steps, the mouse wheel zooms. `focus_on` moves in close on a point (the install
+## The view never turns (the house always faces the same way); the mouse wheel zooms. `focus_on` moves in close on a point (the install
 ## view) with its own zoom range; `release` goes back to following the target.
 
 const PITCH := -40.0
@@ -17,7 +17,6 @@ var _focus_pitch: Variant = null
 var _pitch := deg_to_rad(PITCH)
 var _saved_distance := 26.0
 var _dist := 26.0                  # what is shown; eases towards `distance`
-var yaw_index := 0
 var camera: Camera3D
 var _yaw := deg_to_rad(45.0)
 
@@ -28,9 +27,6 @@ func _ready() -> void:
 	camera.current = true
 	add_child(camera)
 	_place()
-
-func rotate_step(steps: int) -> void:
-	yaw_index = posmod(yaw_index + steps, 4)
 
 func zoom(factor: float) -> void:
 	if _focus != null:
@@ -107,7 +103,7 @@ func _process(delta: float) -> void:
 	if goal != null:
 		global_position = global_position.lerp(goal, 1.0 - exp(-6.0 * delta))
 	_dist = lerpf(_dist, distance, 1.0 - exp(-5.0 * delta))
-	var yaw_goal: float = _focus_yaw if _focus != null and _focus_yaw != null else deg_to_rad(45.0 + 90.0 * yaw_index)
+	var yaw_goal: float = _focus_yaw if _focus != null and _focus_yaw != null else deg_to_rad(45.0)
 	var pitch_goal: float = _focus_pitch if _focus != null and _focus_pitch != null else deg_to_rad(PITCH)
 	_yaw = lerp_angle(_yaw, yaw_goal, 1.0 - exp(-6.0 * delta))
 	_pitch = lerpf(_pitch, pitch_goal, 1.0 - exp(-6.0 * delta))

@@ -7,7 +7,8 @@ extends Node
 ##             hidden behind a wall or furniture once the camera has moved in
 ##   posts     both brothers reach their working spots on two-person jobs
 ##   reach     every room and every job station can be walked to (click to move), without getting stuck
-##   wasd      walking into walls and corners with the keys never leaves a person stuck or inside a wall
+##   hold      holding the mouse button towards every wall and corner never leaves Nico stuck or inside a
+##             wall (he walks on paths only)
 ##   tour      the everyday states (intro, carrying alone and together, help, upstairs, end card): no HUD
 ##             panel covers another
 ## `--shots=<dir>` also saves a screenshot per install step (needs a real display).
@@ -33,8 +34,8 @@ func run() -> void:
 		await _check_install()
 	if _wants("reach"):
 		await _check_reach()
-	if _wants("wasd"):
-		await _check_wasd()
+	if _wants("hold"):
+		await _check_hold()
 	if _wants("tour"):                       # last: it plays the day to its end
 		await _tour()
 	if fails.is_empty():
@@ -289,9 +290,9 @@ func _free_point(p: Vector3) -> Vector3:
 	var q := NavigationServer3D.map_get_closest_point(map, p + Vector3(0, 0.2, 0))
 	return Vector3(q.x, p.y, q.z)
 
-## Steers into every wall of every room with the keys (8 directions from the centre), then checks the
-## person is not inside a wall and can still walk back.
-func _check_wasd() -> void:
+## Holds the mouse button towards every wall of every room (8 directions from the centre, the cursor
+## 8 m away), then checks Nico is not inside a wall, still on that floor, and can walk back.
+func _check_hold() -> void:
 	var a: Actor = main.current
 	main.follow = false
 	var seen := {}
@@ -304,16 +305,18 @@ func _check_wasd() -> void:
 			_place(a, c)
 			await _wait(0.1)
 			var ang := k * TAU / 8.0
-			a.steer = Vector2(cos(ang), sin(ang))
-			await _wait(2.5)
-			a.steer = Vector2.ZERO
+			var cursor := c + Vector3(cos(ang), 0, sin(ang)) * 8.0
+			for i in 25:
+				main.walk_toward(cursor)
+				await _wait(0.1)
+			a.stop()
 			await _wait(0.2)
 			if _inside_wall(a):
-				_fail("keys %s dir %d: %s ended inside a wall at %s" % [r[0], k, a.display_name, a.global_position])
+				_fail("hold %s dir %d: %s ended inside a wall at %s" % [r[0], k, a.display_name, a.global_position])
 			if House.level_of(a.global_position + Vector3(0, 0.6, 0)) != r[2]:
-				_fail("keys %s dir %d: fell to another floor at %s" % [r[0], k, a.global_position])
+				_fail("hold %s dir %d: fell to another floor at %s" % [r[0], k, a.global_position])
 				continue
-			await _walk_check(a, c, "keys %s dir %d, walk back" % [r[0], k])
+			await _walk_check(a, c, "hold %s dir %d, walk back" % [r[0], k])
 	_place(a, Vector3(10.0, 0.0, 14.0))
 
 func _inside_wall(a: Actor) -> bool:

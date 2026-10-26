@@ -1,7 +1,7 @@
 class_name Actor
 extends CharacterBody3D
-## A person in the house: the rigged person model, navigation (click-to-move, orders, schedules) and
-## direct steering (WASD for the controlled brother). Walk/run/carry playback follows the real speed;
+## A person in the house: the rigged person model and navigation (click-to-move, orders, schedules):
+## everyone walks on paths only. Walk/run/carry playback follows the real speed;
 ## work clips (`work`) and a tool in the right hand (`hold_tool`) come from the install view.
 
 signal arrived
@@ -23,7 +23,6 @@ const GRAVITY := 20.0
 
 var display_name := ""
 var controlled := false
-var steer := Vector2.ZERO      # world xz direction for direct control (WASD); overrides navigation
 var running := false
 var busy := false              # in the install view or holding something in place: does not move
 var speed_mul := 1.0           # carrying slows you down
@@ -187,8 +186,6 @@ func tool_in_hand() -> String:
 func set_controlled(on: bool) -> void:
 	controlled = on
 	_ring.visible = on
-	if not on:
-		steer = Vector2.ZERO
 
 func go_to(p: Vector3) -> void:
 	agent.target_position = p
@@ -258,9 +255,6 @@ func _physics_process(delta: float) -> void:
 		to_spot.y = 0.0
 		if to_spot.length() > 0.02:            # a little faster while he lags behind
 			dir = to_spot.normalized() * clampf((_trail_behind - lead_gap) * 2.0, 0.3, 1.4)
-		_going = false
-	elif steer.length() > 0.05:
-		dir = Vector3(steer.x, 0, steer.y).limit_length(1.0)
 		_going = false
 	elif _going:
 		_fresh += 1

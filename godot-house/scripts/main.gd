@@ -2,10 +2,9 @@ extends Node3D
 ## "Off the Books". Day 1, the first job (tutorial), and day 2 (Story2: the accident, the cover-up, the
 ## police). Design: docs/game3-design.md
 ##
-## Controls: left click / WASD move, Shift run, E interact (start a job, lift or put down a load), Tab
-## switch brother, right click send the other brother there, F the other brother follows / waits, H call
-## him over, J fold the job list, F1 controls, Q/R rotate the view, mouse wheel zoom, G graphics, Esc stop
-## working / quit. In the install view: 1-9 or click picks a tool, click a glowing spot to work on it
+## Controls: left click (or hold) to walk, Shift run, E interact (start a job, lift or put down a load); you are
+## always Nico and Tomas is run by the game: right click sends him there, F he follows / waits, H call
+## him over; J fold the job list, F1 controls, mouse wheel zoom, G graphics, Esc stop working / pause. In the install view: 1-9 or click picks a tool, click a glowing spot to work on it
 ## (hold the button on held steps), wheel zooms, Esc steps back.
 ## Flags (after `--`): --day=1|2, --case=<accident id>, --selftest (plays the day, prints SELFTEST_OK /
 ## SELFTEST_FAIL; day 2 takes --plan=clean|trail|truth|early|caught), --quality=<level>
@@ -53,7 +52,8 @@ var _auto_job: Job                     # what the other brother is doing on his 
 var _auto_units := 0                   # how many of its hotspots he has finished
 var _dialogue: Dialogue
 var _selftest := false
-var _scripted := false                 # self-test or play-test: no keyboard steering
+var _scripted := false                 # self-test or play-test: no keyboard or mouse-hold walking
+var _holding := false                  # the left button is held on the floor: Nico follows the cursor
 var _follow_timer := 0.0
 var _nav_ok := false
 var _hints_shown := {}
@@ -131,7 +131,6 @@ func _ready() -> void:
 	hud = Hud.new()
 	add_child(hud)
 	hud.send_job.connect(send_to_job)
-	hud.switch_brother.connect(switch_brother)
 	hud.toggle_follow.connect(toggle_follow)
 	hud.call_brother.connect(call_brother)
 	hud.restart.connect(func(): get_tree().reload_current_scene())
@@ -266,17 +265,20 @@ func _control(a: Actor) -> void:
 	cam.target = a
 	_board_dirty = true
 
+## Nico walks to `p` on a path (never straight into a wall); called again while the button is held, it
+## only plans a new path once the cursor has moved.
+func walk_toward(p: Vector3) -> void:
+	if current.busy or day_over:
+		return
+	if current.is_going() and current.agent.target_position.distance_to(p) < 0.3:
+		return
+	current.go_to(p)
+
 func other() -> Actor:
 	return tomas if current == nico else nico
 
 func _auto_worker() -> Actor:
 	return other()
-
-func switch_brother() -> void:
-	if _carry != null or install.is_active():
-		hud.toast("Finish what you are doing first.", 2.5)
-		return
-	_control(other())
 
 func order_go(p: Vector3) -> void:
 	if other().busy:
@@ -574,8 +576,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_C:
 				if story and story.phase == Story2.Phase.COVERUP:
 					story.cover.order("tidy")
-			KEY_TAB:
-				switch_brother()
 			KEY_F:
 				toggle_follow()
 			KEY_H:
@@ -584,11 +584,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				hud.toggle_jobs()
 			KEY_F1:
 				hud.toggle_help()
-			KEY_Q:
-				cam.rotate_step(-1)
-			KEY_R:
-				if not hud.end_visible():
-					cam.rotate_step(1)
 			KEY_G:
 				gfx.cycle()
 			KEY_ESCAPE:
@@ -602,8 +597,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				var p: Variant = cam.floor_point(event.position)
 				if p != null and not day_over:
 					if event.button_index == MOUSE_BUTTON_LEFT:
-						if not current.busy:
-							current.go_to(p)
+						walk_toward(p)
+						_holding = true
 					else:
 						order_go(p)
 			MOUSE_BUTTON_WHEEL_UP:
@@ -624,13 +619,16 @@ func _process(delta: float) -> void:
 	if story:
 		story.tick(delta)
 	if not _scripted and not cutscene:
-		var input := Vector2(
-			float(_down(KEY_D, KEY_RIGHT)) - float(_down(KEY_A, KEY_LEFT)),
-			float(_down(KEY_S, KEY_DOWN)) - float(_down(KEY_W, KEY_UP)))
-		current.steer = cam.to_world(input.normalized()) if input != Vector2.ZERO and not current.busy else Vector2.ZERO
 		current.running = Input.is_physical_key_pressed(KEY_SHIFT) and _carry == null
+		if _holding:                              # the left button held down: keep walking to the cursor
+			if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+				_holding = false
+			else:
+				var p: Variant = cam.floor_point(get_viewport().get_mouse_position())
+				if p != null:
+					walk_toward(p)
 	elif cutscene:
-		current.steer = Vector2.ZERO
+		_holding = false
 
 	_update_carry(delta)
 	_update_follow(delta)
@@ -785,9 +783,6 @@ func _on_end_action(key: String) -> void:
 		"M":
 			Game.case_id = ""
 			get_tree().change_scene_to_file("res://scenes/menu.tscn")
-
-func _down(a: Key, b: Key) -> bool:
-	return Input.is_physical_key_pressed(a) or Input.is_physical_key_pressed(b)
 
 func _show_hint_once(key: String, again := false) -> void:
 	if _hints_shown.has(key) and not again:

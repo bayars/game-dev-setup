@@ -9,7 +9,6 @@ extends CanvasLayer
 ## Controls are listed on F1 instead of always on screen.
 
 signal send_job(job: Job)
-signal switch_brother
 signal toggle_follow
 signal call_brother
 signal tool_picked(id: String)
@@ -269,11 +268,8 @@ func _build_brothers() -> void:
 	v.add_child(cards)
 	for who in ["Nico", "Tomas"]:
 		var card := PanelContainer.new()
-		card.mouse_filter = Control.MOUSE_FILTER_STOP
+		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		card.custom_minimum_size = Vector2(136, 0)
-		card.gui_input.connect(func(e):
-			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
-				switch_brother.emit())
 		var h := HBoxContainer.new()
 		card.add_child(h)
 		h.add_child(UiTheme.dot(UiTheme.person_color(who), 14))
@@ -308,10 +304,6 @@ func _build_brothers() -> void:
 	_stress.tooltip_text = "Tomas's nerves"
 	_stress.visible = false
 	v.add_child(_stress)
-	var tab := UiTheme.key_hint("Tab", "switch", UiTheme.CAPTION)
-	tab.modulate.a = 0.75
-	tab.alignment = BoxContainer.ALIGNMENT_END
-	v.add_child(tab)
 
 func _order_button(key: String, text: String, on: Callable) -> Button:
 	var b := Button.new()
@@ -445,9 +437,9 @@ func _build_help() -> void:
 	grid.add_theme_constant_override("h_separation", 32)
 	grid.add_theme_constant_override("v_separation", 8)
 	v.add_child(grid)
-	for k in [["Click / WASD", "walk"], ["Shift", "run"], ["E", "use, lift, put down"], ["Tab", "switch brother"],
+	for k in [["Click / hold", "walk"], ["Shift", "run"], ["E", "use, lift, put down"],
 			["Right click", "send the other one there"], ["F", "he follows / waits"], ["H", "call him over"],
-			["J", "fold the job list"], ["Q / R", "turn the view"], ["L / P", "day 2: lift him / his phone"],
+			["J", "fold the job list"], ["L / P", "day 2: lift him / his phone"],
 				["K / C", "day 2: keep someone busy / tidy"], ["Wheel", "zoom"], ["1-9", "pick a tool"],
 			["Esc", "pause / stop working"], ["G", "graphics quality"], ["F1", "this help"]]:
 		grid.add_child(UiTheme.key_hint(k[0], k[1]))

@@ -437,10 +437,9 @@ func _build_help() -> void:
 	grid.add_theme_constant_override("h_separation", 32)
 	grid.add_theme_constant_override("v_separation", 8)
 	v.add_child(grid)
-	for k in [["Click / hold", "walk"], ["Shift", "run"], ["E", "use, lift, put down"],
+	for k in [["Click / hold", "walk"], ["Shift", "run"], ["Click a thing", "go and use it"], ["E", "use the nearest thing"],
 			["Right click", "send the other one there"], ["F", "he follows / waits"], ["H", "call him over"],
-			["J", "fold the job list"], ["L / P", "day 2: lift him / his phone"],
-				["K / C", "day 2: keep someone busy / tidy"], ["Wheel", "zoom"], ["1-9", "pick a tool"],
+			["J", "fold the job list"], ["K / C", "day 2: keep someone busy / tidy"], ["Wheel", "zoom"], ["1-9", "pick a tool"],
 			["Esc", "pause / stop working"], ["G", "graphics quality"], ["F1", "this help"]]:
 		grid.add_child(UiTheme.key_hint(k[0], k[1]))
 	_help.visible = false

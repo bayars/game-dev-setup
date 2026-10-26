@@ -2,7 +2,8 @@ extends Node3D
 ## "Off the Books". Day 1, the first job (tutorial), and day 2 (Story2: the accident, the cover-up, the
 ## police). Design: docs/game3-design.md
 ##
-## Controls: left click (or hold) to walk, Shift run, E interact (start a job, lift or put down a load); you are
+## Controls: left click (or hold) to walk, click a thing to walk over and use it (a job, a load, in the
+## cover-up Daniel, a sign, a staging spot, a resident), Shift run, E use the nearest thing; you are
 ## always Nico and Tomas is run by the game: right click sends him there, F he follows / waits, H call
 ## him over; J fold the job list, F1 controls, mouse wheel zoom, G graphics, Esc stop working / pause. In the install view: 1-9 or click picks a tool, click a glowing spot to work on it
 ## (hold the button on held steps), wheel zooms, Esc steps back.
@@ -54,6 +55,10 @@ var _dialogue: Dialogue
 var _selftest := false
 var _scripted := false                 # self-test or play-test: no keyboard or mouse-hold walking
 var _holding := false                  # the left button is held on the floor: Nico follows the cursor
+var _hover := {}                       # the clickable thing under the cursor (see `targets`)
+var _pending := {}                     # a clicked thing: Nico walks to it, then uses it
+var _hover_ring: MeshInstance3D
+const HOVER_PX := 44.0                 # how close the cursor must be to a thing, in pixels
 var _follow_timer := 0.0
 var _nav_ok := false
 var _hints_shown := {}
@@ -273,6 +278,126 @@ func walk_toward(p: Vector3) -> void:
 	if current.is_going() and current.agent.target_position.distance_to(p) < 0.3:
 		return
 	current.go_to(p)
+
+# ---------------------------------------------------------------- clicking on things
+
+## Everything Nico can click now: [{kind, at, label, reach, ...}]: open jobs, loads (or the one he
+## carries, to put it down) and, in the cover-up, Daniel, the signs, the staging spots and the family.
+func targets() -> Array:
+	var out: Array = []
+	if day_over or cutscene or install.is_active() or current.busy or hud.end_visible() or hud.choosing():
+		return out
+	if _carry != null:
+		if _carry.lead() == current:
+			var label := "Put down the %s" % _carry.label
+			if story and _carry == story.cover.body:
+				label = story.cover.prompt(current)[1]
+			out.append({"kind": "put_down", "at": _carry.global_position, "reach": INF, "label": label})
+		return out
+	for job in jobs.values():
+		if job.carry == null and job.available(jobs) and job != _auto_job and not job.auto_only:
+			out.append({"kind": "job", "job": job, "at": job.station, "reach": REACH,
+				"label": job.title + ("  (needs %s to hold)" % other().display_name if job.needs_two else "")})
+		elif job.carry != null and not job.done and not job.carry.is_carried():
+			out.append({"kind": "load", "load": job.carry, "at": job.carry.global_position, "reach": REACH + 0.5,
+				"label": ("Lift the %s together" if _pair_ready() else "Lift the %s alone  (slow and loud;  H calls " + other().display_name + ")") % job.carry.label})
+	if story and story.phase == Story2.Phase.COVERUP:
+		out += story.cover.targets(current)
+	return out
+
+## Clicks `t`: Nico walks over and uses it (at once if he is already close enough).
+func use_target(t: Dictionary) -> void:
+	_holding = false
+	_pending = t
+	if not _in_reach(t):
+		current.go_to(_target_at(t))
+	_update_pending()
+
+func _target_at(t: Dictionary) -> Vector3:
+	return (t.npc as Npc).global_position if t.kind == "resident" else t.at
+
+func _in_reach(t: Dictionary) -> bool:
+	var at := _target_at(t)
+	if absf(at.y - current.global_position.y) > 1.2 and t.reach != INF:
+		return false
+	return Vector2(at.x - current.global_position.x, at.z - current.global_position.z).length() < t.reach
+
+func _update_pending() -> void:
+	if _pending.is_empty():
+		return
+	if day_over or cutscene or current.busy or install.is_active():
+		_pending = {}
+	elif _in_reach(_pending):
+		var t := _pending
+		_pending = {}
+		current.stop()
+		_use(t)
+	elif not current.is_going():
+		_pending = {}                              # could not get there
+	elif _target_moved(_pending):
+		current.go_to(_target_at(_pending))
+
+## A resident walks on: follow where they are now.
+func _target_moved(t: Dictionary) -> bool:
+	return t.kind == "resident" and current.agent.target_position.distance_to(_target_at(t)) > 0.6
+
+func _use(t: Dictionary) -> void:
+	match t.kind:
+		"job":
+			start_job(t.job)
+		"load":
+			pick_up(t.load)
+		"put_down":
+			if _carry != null and _carry.lead() == current:
+				put_down()
+		_:
+			story.cover.act_on(current, t)
+
+## The clickable thing at `screen` (pixels), or {}: the nearest within HOVER_PX on the floor in view.
+func target_at(screen: Vector2) -> Dictionary:
+	var found := {}
+	var best := HOVER_PX
+	for t in targets():
+		var at := _target_at(t)
+		if House.level_of(at + Vector3(0, 0.6, 0)) != house.level_shown:
+			continue
+		for lift in [0.1, 0.9]:                   # its foot on the floor, or a person's body
+			var p := at + Vector3(0, lift, 0)
+			if cam.camera.is_position_behind(p):
+				continue
+			var d := cam.camera.unproject_position(p).distance_to(screen)
+			if d < best:
+				best = d
+				found = t
+	return found
+
+## The thing under the cursor, ringed on the floor.
+func _update_hover() -> void:
+	_hover = {}
+	if not _scripted and get_viewport().gui_get_hovered_control() == null:
+		_hover = target_at(get_viewport().get_mouse_position())
+	if _hover_ring == null:
+		_hover_ring = MeshInstance3D.new()
+		var torus := TorusMesh.new()
+		torus.inner_radius = 0.42
+		torus.outer_radius = 0.5
+		torus.rings = 48
+		_hover_ring.mesh = torus
+		var m := StandardMaterial3D.new()
+		m.albedo_color = Color(1.0, 1.0, 1.0, 0.8)
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.no_depth_test = true
+		_hover_ring.material_override = m
+		_hover_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_hover_ring.scale.y = 0.1
+		add_child(_hover_ring)
+	_hover_ring.visible = not _hover.is_empty()
+	if _hover_ring.visible:
+		var at := _target_at(_hover)
+		var floor_y := House.UP if House.level_of(at + Vector3(0, 0.6, 0)) == 1 else 0.0
+		_hover_ring.global_position = Vector3(at.x, floor_y + Worksite.FLOOR + 0.03, at.z)
+		_hover_ring.scale = Vector3.ONE * (1.0 + 0.08 * sin(Time.get_ticks_msec() / 160.0)) * Vector3(1, 0.1, 1)
 
 func other() -> Actor:
 	return tomas if current == nico else nico
@@ -564,12 +689,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		match event.physical_keycode:
 			KEY_E:
 				interact()
-			KEY_P:
-				if story and story.phase == Story2.Phase.COVERUP:
-					story.cover.phone(current)
-			KEY_L:
-				if story and story.phase == Story2.Phase.COVERUP and not current.busy and not cutscene:
-					story.cover.lift(current)
 			KEY_K:
 				if story and story.phase == Story2.Phase.COVERUP:
 					story.cover.order("keep_busy")
@@ -597,8 +716,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				var p: Variant = cam.floor_point(event.position)
 				if p != null and not day_over:
 					if event.button_index == MOUSE_BUTTON_LEFT:
-						walk_toward(p)
-						_holding = true
+						if not _hover.is_empty():
+							use_target(_hover)
+						else:
+							_pending = {}
+							walk_toward(p)
+							_holding = true
 					else:
 						order_go(p)
 			MOUSE_BUTTON_WHEEL_UP:
@@ -633,6 +756,8 @@ func _process(delta: float) -> void:
 	_update_carry(delta)
 	_update_follow(delta)
 	_update_auto_work(delta)
+	_update_hover()
+	_update_pending()
 	_update_prompt()
 	cam.floor_y = House.UP if House.level_of(current.global_position + Vector3(0, 0.6, 0)) == 1 else 0.0
 	var focus := current.global_position
@@ -730,6 +855,8 @@ func _update_prompt() -> void:
 	var extra: Array = story.cover.prompt(current) if story and story.phase == Story2.Phase.COVERUP else []
 	if day_over or install.is_active() or cutscene or hud.end_visible():
 		hud.set_prompt("", "")
+	elif not _hover.is_empty():
+		hud.set_prompt("Click", _hover.label)
 	elif not extra.is_empty():
 		hud.set_prompt(extra[0], extra[1], extra[2] if extra.size() > 2 else "", extra[3] if extra.size() > 3 else "")
 	elif _carry != null:

@@ -106,7 +106,6 @@ const FURNITURE := [
 
 	["Bed", Vector3(0.7, UP, 1.2), 0, true],
 	["Desk", Vector3(3.6, UP, 0.4), 0, true],
-	["Wardrobe", Vector3(6.4, UP, 0.4), 0, true],
 	["Rug", Vector3(3.8, UP, 3.4), 0, false],
 	["Bed", Vector3(0.7, UP, 7.2), 0, true],
 	["Desk", Vector3(2.4, UP, 11.6), 180, true],
@@ -274,7 +273,8 @@ func update_cutaway(focus: Vector3, toward_camera: Vector2, delta: float) -> voi
 		if w.level == lvl:
 			var cp := Geometry2D.get_closest_point_to_segment(f, w.a, w.b)
 			var rel := cp - f
-			want = 1.0 if rel.dot(toward_camera) > 0.25 and rel.length() < 16.0 else 0.0
+			# a wall on the camera's side comes down (a very near one even when only just on that side)
+			want = 1.0 if rel.dot(toward_camera) > minf(0.25, rel.length() * 0.5) and rel.length() < 16.0 else 0.0
 		w.cut = move_toward(w.cut, want, delta * 4.0)
 		(w.mesh as MeshInstance3D).set_instance_shader_parameter("cut", w.cut)
 

@@ -162,12 +162,10 @@ func _cover_up(tidy_main: bool) -> String:
 	for t in cover.tokens.duplicate():
 		if t.main and not tidy_main and t.item == "":
 			continue
-		var off := Vector3(t.global_position.x - cover.body.where().x, 0, t.global_position.z - cover.body.where().z).normalized()
-		if not await _walk(nico, t.global_position + off * 0.25):
-			return "could not reach %s" % t.label.to_lower()
-		main.interact()
+		if not _click(func(x): return x.get("token") == t):     # Nico walks over himself
+			return "%s cannot be clicked" % t.label.to_lower()
 		var tid: int = t.get_instance_id()
-		if not await _until(func(): return not cover.tokens.any(func(x): return x.get_instance_id() == tid), 20.0):
+		if not await _until(func(): return not cover.tokens.any(func(x): return x.get_instance_id() == tid), 30.0):
 			return "could not tidy %s (prompt %s)" % [t.label.to_lower(), cover.prompt(nico)]
 	# carry him together to a place that explains it
 	var sc: StageScenario = null
@@ -182,17 +180,20 @@ func _cover_up(tidy_main: bool) -> String:
 	if not await _walk(nico, _beside(body)):
 		return "could not get to Daniel"
 	await _until(func(): return main._pair_ready(), 20.0)
-	_key(KEY_L, true)
-	await get_tree().process_frame
-	_key(KEY_L, false)
-	await get_tree().process_frame
+	if not tidy_main:                          # the sloppy run switches his phone off first (the menu's 2nd choice)
+		await _click_body(1)
+		if cover.phone_off < 0.0:
+			return "could not switch his phone off from the menu"
+	await _click_body(0)
 	if main._carry != body or body.carriers.size() != 2:
 		return "could not lift him together (carry %s, prompt %s, pair %s, tomas %s busy %s, body %s, nico %s)" % [main._carry, cover.prompt(nico), main._pair_ready(), main.tomas.global_position, main.tomas.busy, body.where(), nico.global_position]
 	_log("lifted: nico %s tomas %s load %s body %s" % [nico.global_position, main.tomas.global_position, body.global_position, body.where()])
 	_trace(nico, body)
 	if not await _walk(nico, sc.mark):
 		return "could not carry him to %s (stuck at %s)" % [sc.title, nico.global_position]
-	main.interact()
+	if not _click(func(x): return x.kind == "put_down"):
+		return "cannot click him to put him down"
+	await get_tree().process_frame
 	if main._carry != null:
 		return "could not put him down"
 	await _wait(1.0)
@@ -202,10 +203,9 @@ func _cover_up(tidy_main: bool) -> String:
 	for spec in sc.setup:
 		if not tidy_main and spec.needs != "":
 			continue                            # the trail: the nail gun stays in the bag
-		if not await _walk(nico, spec.at):
-			return "could not reach the setup spot for %s" % spec.text
-		main.interact()
-		if not await _until(func(): return spec.id in cover.setup_done.get(sc.id, []), 20.0):
+		if not _click(func(x): return x.kind == "setup" and x.mark.spec.id == spec.id):
+			return "the setup spot for %s cannot be clicked" % spec.text
+		if not await _until(func(): return spec.id in cover.setup_done.get(sc.id, []), 30.0):
 			return "could not set up: %s (prompt %s)" % [spec.text, cover.prompt(nico)]
 	# Tomas keeps the house sounding like work
 	for job in main.jobs.values():
@@ -228,10 +228,7 @@ func _caught() -> String:
 	if not await _walk(main.nico, _beside(cover.body)):
 		return "could not get to Daniel"
 	await _until(func(): return main._pair_ready(), 20.0)
-	_key(KEY_L, true)
-	await get_tree().process_frame
-	_key(KEY_L, false)
-	await get_tree().process_frame
+	await _click_body(0)
 	if main._carry != cover.body:
 		return "could not lift him (prompt %s, pair %s, nico %s, body %s)" % [cover.prompt(main.nico), main._pair_ready(), main.nico.global_position, cover.body.where()]
 	var linda: Npc = main.linda
@@ -300,6 +297,25 @@ func _until(cond: Callable, seconds: float) -> bool:
 
 func _wait(seconds: float) -> void:
 	await _until(func(): return false, seconds)
+
+## Clicks the first thing `which` accepts (from Main.targets), as a player does. False if there is none.
+func _click(which: Callable) -> bool:
+	for t in main.targets():
+		if which.call(t):
+			main.use_target(t)
+			return true
+	return false
+
+## Clicks Daniel as a player does; while his phone is on that opens a menu, answered with `choice`
+## (0 lift him, 1 switch off his phone).
+func _click_body(choice: int) -> void:
+	for t in main.targets():
+		if t.kind == "body":
+			main.use_target(t)
+	await get_tree().process_frame
+	if main.hud.choosing():
+		main.hud.chosen.emit(choice)
+	await get_tree().process_frame
 
 func _key(code: Key, down: bool) -> void:
 	var e := InputEventKey.new()

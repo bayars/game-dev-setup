@@ -3,3 +3,4 @@ build/
 .godot/
 *.log
 *.import-cache
+godot-house/override.cfg

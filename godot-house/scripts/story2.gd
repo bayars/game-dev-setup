@@ -141,7 +141,7 @@ func _accident() -> void:
 		"stud":
 			_tip(piece, d.global_position, deg_to_rad(78.0), 0.7)
 		"sheet":
-			piece.global_transform = Transform3D(Basis.from_euler(Vector3(0, PI / 2, 0)) * Basis.from_scale(Vector3(0.99 / 1.2, 2.6 / 2.4, 1.0)),
+			piece.global_transform = Worksite2.CLOSET * Transform3D(Basis.from_euler(Vector3(0, PI / 2, 0)) * Basis.from_scale(Vector3(0.99 / 1.2, 2.6 / 2.4, 1.0)),
 				Vector3(Worksite2.X2 - 0.25, House.UP + 0.02, 5.35))
 			await cine.wait(0.4)
 			_tip(piece, d.global_position, deg_to_rad(72.0), 0.8)
@@ -233,7 +233,7 @@ func _choice(minute: float) -> void:
 	main.cutscene = false
 	main.follow = true
 	main._board_dirty = true
-	main.hud.toast("Move him out of this room: L lifts him (together if %s is next to you, H calls him; alone you drag him, loud). Set him down at a blue ring and set the scene. E tidies the signs. Send %s to keep working. They will start looking for him soon." % [main.tomas.display_name, main.tomas.display_name], 14.0)
+	main.hud.toast("Move him out of this room: click him to lift him (together if %s is next to you, H calls him; alone you drag him, loud). Set him down at a blue ring and set the scene. Click the signs to tidy them. Send %s to keep working. They will start looking for him soon." % [main.tomas.display_name, main.tomas.display_name], 14.0)
 
 func _truth() -> void:
 	_cine_begin()

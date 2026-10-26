@@ -9,6 +9,8 @@ extends Node
 ##   reach     every room and every job station can be walked to (click to move), without getting stuck
 ##   hold      holding the mouse button towards every wall and corner never leaves Nico stuck or inside a
 ##             wall (he walks on paths only)
+##   click     every open job and load can be picked out under the cursor and clicked: Nico walks over
+##             and it starts (the install view opens, the load is lifted)
 ##   tour      the everyday states (intro, carrying alone and together, help, upstairs, end card): no HUD
 ##             panel covers another
 ## `--shots=<dir>` also saves a screenshot per install step (needs a real display).
@@ -36,6 +38,8 @@ func run() -> void:
 		await _check_reach()
 	if _wants("hold"):
 		await _check_hold()
+	if _wants("click"):
+		await _check_click()
 	if _wants("tour"):                       # last: it plays the day to its end
 		await _tour()
 	if fails.is_empty():
@@ -222,8 +226,8 @@ func _first_hit(from: Vector3, p: Vector3) -> String:
 
 func _drawn_at(body: Node, at: Vector3) -> bool:
 	var house: House = main.house
-	if not body.is_visible_in_tree():
-		return false
+	if not body.is_visible_in_tree() or main.install.is_faded(body):
+		return false                           # (furniture in front of the work fades out)
 	for w in house.walls:
 		var mi := w.mesh as MeshInstance3D
 		if mi.get_parent() == body:
@@ -318,6 +322,40 @@ func _check_hold() -> void:
 				continue
 			await _walk_check(a, c, "hold %s dir %d, walk back" % [r[0], k])
 	_place(a, Vector3(10.0, 0.0, 14.0))
+
+## Stands Nico 3 m from each job and load, picks it at its own place on the screen and clicks it.
+func _check_click() -> void:
+	var a: Actor = main.current
+	main.follow = false
+	for t in main.targets():
+		var at: Vector3 = t.at
+		var name: String = t.label
+		_place(a, _free_point(at + Vector3(2.2, 0, 2.0)))
+		await _wait(1.2)                         # the camera settles on him
+		var cam: Camera3D = main.cam.camera
+		var px := cam.unproject_position(at + Vector3(0, 0.1, 0))
+		if not get_viewport().get_visible_rect().has_point(px):
+			_fail("click %s: not on screen from 3 m away (%s)" % [name, px])
+			continue
+		var picked: Dictionary = main.target_at(px)
+		if picked.get("kind") != t.kind or picked.get("job", picked.get("load")) != t.get("job", t.get("load")):
+			_fail("click %s: the cursor on it picks '%s'" % [name, picked.get("label", "nothing")])
+			continue
+		main.use_target(picked)
+		var started := false
+		for i in 120:
+			await _wait(0.1)
+			if main.install.is_active() or main._carry != null or (t.kind == "job" and t.job.needs_two and main._in_reach(t)):
+				started = true
+				break
+		if not started:
+			_fail("click %s: Nico did not get there and start it (at %s)" % [name, a.global_position])
+		if main.install.is_active():
+			main.install.cancel()
+		if main._carry != null:
+			main.put_down()
+		await _wait(0.5)
+		a.busy = false
 
 func _inside_wall(a: Actor) -> bool:
 	var q := PhysicsShapeQueryParameters3D.new()

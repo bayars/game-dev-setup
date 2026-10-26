@@ -4,47 +4,43 @@ extends RefCounted
 ## accident cases (resources/accidents) and stage scenarios (resources/scenarios) loaded from data.
 
 const UP := House.UP
-const WEST_LOW := Vector2(-62, -40)       # the closet wall, from the room side
-const WEST_FACE := Vector2(-62, -24)
-const SKIRT_VIEW := Vector2(62, -45)      # the west wall, from the east
-const CEILING_VIEW := Vector2(20, -28)
 
 static func jobs() -> Dictionary:
 	var list: Array[Job] = []
-	var j := Job.new("closet_studs", "Frame the closet wall", Vector3(6.9, UP, 4.6))
+	var j := Job.new("closet_studs", "Frame the closet wall", Vector3(6.3, UP, 1.8))
 	j.steps = [
-		{"tool": "tape", "kind": "hold", "seconds": 1.5, "text": "Mark the stud positions on the plate", "view": WEST_LOW},
-		{"tool": "drill", "kind": "spots", "text": "Stand each stud on its mark and screw it down", "view": WEST_LOW},
-		{"tool": "drill", "kind": "hold", "seconds": 1.5, "text": "Screw the top plate across the studs", "view": WEST_FACE},
+		{"tool": "tape", "kind": "hold", "seconds": 1.5, "text": "Mark the stud positions on the plate"},
+		{"tool": "drill", "kind": "spots", "text": "Stand each stud on its mark and screw it down"},
+		{"tool": "drill", "kind": "hold", "seconds": 1.5, "text": "Screw the top plate across the studs"},
 	]
 	j.pay = 70
 	list.append(j)
 
-	j = Job.new("closet_drywall", "Board the closet wall", Vector3(6.9, UP, 4.4))
+	j = Job.new("closet_drywall", "Board the closet wall", Vector3(6.1, UP, 1.8))
 	j.needs_two = true
 	j.requires = ["closet_studs"]
 	j.steps = [
-		{"tool": "sheet", "kind": "spots", "text": "Lift each sheet onto the studs (someone holds it while you fix it)", "view": WEST_FACE},
-		{"tool": "drill", "kind": "spots", "text": "Screw the sheets to every stud", "view": WEST_FACE},
-		{"tool": "taping", "kind": "spots", "text": "Tape the seam", "view": WEST_FACE},
-		{"tool": "mud", "kind": "hold", "seconds": 2.5, "text": "Mud over the tape and the screw heads", "view": WEST_FACE},
+		{"tool": "sheet", "kind": "spots", "text": "Lift each sheet onto the studs (someone holds it while you fix it)"},
+		{"tool": "drill", "kind": "spots", "text": "Screw the sheets to every stud"},
+		{"tool": "taping", "kind": "spots", "text": "Tape the seam"},
+		{"tool": "mud", "kind": "hold", "seconds": 2.5, "text": "Mud over the tape and the screw heads"},
 	]
 	j.pay = 90
 	list.append(j)
 
 	j = Job.new("skirting", "Nail on the skirting boards", Vector3(0.9, UP, 4.0))
 	j.steps = [
-		{"tool": "tape", "kind": "hold", "seconds": 1.2, "text": "Measure the wall for the boards", "view": SKIRT_VIEW},
-		{"tool": "nailgun", "kind": "spots", "text": "Nail each board along the wall", "view": SKIRT_VIEW},
+		{"tool": "tape", "kind": "hold", "seconds": 1.2, "text": "Measure the wall for the boards"},
+		{"tool": "nailgun", "kind": "spots", "text": "Nail each board along the wall"},
 	]
 	j.pay = 60
 	list.append(j)
 
 	j = Job.new("light", "Fit the ceiling light", Vector3(4.5, UP, 3.7))
 	j.steps = [
-		{"tool": "stripper", "kind": "hold", "seconds": 1.2, "text": "Strip the cable ends at the ceiling", "view": CEILING_VIEW},
-		{"tool": "screwdriver", "kind": "order", "text": "Connect earth first, then live, then neutral", "view": CEILING_VIEW},
-		{"tool": "fitting", "kind": "spots", "text": "Fit the lamp", "view": CEILING_VIEW},
+		{"tool": "stripper", "kind": "hold", "seconds": 1.2, "text": "Strip the cable ends at the ceiling"},
+		{"tool": "screwdriver", "kind": "order", "text": "Connect earth first, then live, then neutral"},
+		{"tool": "fitting", "kind": "spots", "text": "Fit the lamp"},
 	]
 	j.pay = 50
 	list.append(j)

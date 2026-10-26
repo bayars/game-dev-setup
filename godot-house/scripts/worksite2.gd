@@ -1,16 +1,21 @@
 class_name Worksite2
 extends Worksite
 ## Day 2: yesterday's work stands finished downstairs, and today's job is Daniel's room upstairs: a closet
-## wall (studs, then drywall), skirting boards nailed along the west wall, and a new ceiling light.
+## wall along the north wall (studs, then drywall), skirting boards nailed along the west wall, and a new
+## ceiling light.
+## The closet is laid out in its own frame (studs from (X2, Z2) along +z, the room towards -x) and turned
+## a quarter turn into place by CLOSET: the studs run east along the north wall from (5.4, 1.1) and the
+## boarded side faces south, towards the camera (which never turns).
 ## The pieces the accident cases move (the first stud, the second sheet, the nail gun) are reachable by
 ## name for the cut-scene (`piece`).
 
 const UP := House.UP
-const X2 := 7.6                            # the closet partition, studs from Z2 every GAP2 m
+const X2 := 7.6                            # the closet partition (its own frame), studs from Z2 every GAP2 m
 const Z2 := 3.7
+static var CLOSET := Transform3D(Basis(Vector3.UP, PI / 2), Vector3(5.4, 0, 1.1)) * Transform3D(Basis(), Vector3(-X2, 0, -Z2))
 const N2 := 6
 const GAP2 := 0.42
-const FACE2 := X2 - 0.045 - 0.008          # the west face of its drywall (the side the room sees)
+const FACE2 := X2 - 0.045 - 0.008          # the room face of its drywall (south once turned)
 const SHEETS2 := [[3.655, 1.2], [4.855, 0.99]]
 const SKIRT := [2.7, 3.6, 4.5, 5.4]        # skirting boards along the west wall (z centres)
 const LIGHT := Vector3(4.5, UP + 2.5, 3.0) # the ceiling light
@@ -28,7 +33,10 @@ func setup(h: House, g: Graphics) -> void:
 		finish(id, day1[id].steps)
 	var plate := house.prop("Plate", Vector3(X2, UP, Z2 + GAP2 * (N2 - 1) / 2.0), 90, false, self)
 	plate.scale.x = GAP2 * (N2 - 1) + 0.09
+	plate.transform = CLOSET * plate.transform
 	_frame2 = _collider(Vector3(0.1, 2.6, GAP2 * (N2 - 1) + 0.1), Vector3(X2, UP + 1.3, Z2 + GAP2 * (N2 - 1) / 2.0))
+	var frame_body := _frame2.get_parent() as Node3D
+	frame_body.transform = CLOSET * frame_body.transform
 	_frame2.disabled = true
 	for i in N2:
 		var s := house.prop("Stud", Vector3(5.0 + (i % 3) * 0.11, UP + 0.025 + (i / 3) * 0.047, 5.75), 0, false, self)
@@ -51,6 +59,19 @@ func _lean_south(k: int) -> Transform3D:
 	return Transform3D(b, Vector3(2.0, UP + 0.6 * cos(STACK_LEAN), 5.9 - 0.6 * sin(STACK_LEAN) - k * 0.02))
 
 func spots(job: String, step: int) -> Array:
+	if job.begins_with("closet_"):
+		return _closet_spots(job, step).map(func(p): return CLOSET * p)
+	match job + ":" + str(step):
+		"skirting:0": return [Vector3(0.3, UP + 0.08, 4.0)]
+		"skirting:1": return SKIRT.map(func(z): return Vector3(0.12, UP + 0.1, z))
+		"light:0": return [LIGHT + Vector3(0, -0.04, 0)]
+		"light:1": return [LIGHT + Vector3(0.18, -0.1, 0), LIGHT + Vector3(-0.18, -0.1, 0), LIGHT + Vector3(0, -0.1, 0.18)]
+		"light:2": return [LIGHT + Vector3(0, -0.12, 0)]
+		"keep_working:0": return [Vector3(2.6, UP + 0.2, 4.9), Vector3(3.4, UP + 0.2, 5.0), Vector3(3.8, UP + 1.0, 5.6), Vector3(2.9, UP + 0.2, 4.1)]
+	return super.spots(job, step)
+
+## The closet's hotspots in its own frame (CLOSET turns them into place).
+func _closet_spots(job: String, step: int) -> Array:
 	var z_mid := Z2 + GAP2 * (N2 - 1) / 2.0
 	match job + ":" + str(step):
 		"closet_studs:0": return [Vector3(X2, UP + 0.08, z_mid)]
@@ -60,13 +81,7 @@ func spots(job: String, step: int) -> Array:
 		"closet_drywall:1": return range(N2).map(func(i): return Vector3(FACE2 - 0.02, UP + 1.3, Z2 + i * GAP2))
 		"closet_drywall:2": return [Vector3(FACE2 - 0.02, UP + 1.3, SHEETS2[1][0])]
 		"closet_drywall:3": return [Vector3(FACE2 - 0.02, UP + 1.3, z_mid)]
-		"skirting:0": return [Vector3(0.3, UP + 0.08, 4.0)]
-		"skirting:1": return SKIRT.map(func(z): return Vector3(0.12, UP + 0.1, z))
-		"light:0": return [LIGHT + Vector3(0, -0.04, 0)]
-		"light:1": return [LIGHT + Vector3(0.18, -0.1, 0), LIGHT + Vector3(-0.18, -0.1, 0), LIGHT + Vector3(0, -0.1, 0.18)]
-		"light:2": return [LIGHT + Vector3(0, -0.12, 0)]
-		"keep_working:0": return [Vector3(2.6, UP + 0.2, 4.9), Vector3(3.4, UP + 0.2, 5.0), Vector3(3.8, UP + 1.0, 5.6), Vector3(2.9, UP + 0.2, 4.1)]
-	return super.spots(job, step)
+	return []
 
 func labels(job: String, step: int) -> Array:
 	if job == "light" and step == 1:
@@ -78,29 +93,29 @@ func apply(job: String, step: int, i: int, t := 1.0) -> void:
 		"closet_studs:0":
 			if t >= 1.0:
 				for k in N2:
-					_box(Vector3(0.1, 0.004, 0.012), Vector3(X2, UP + 0.047, Z2 + k * GAP2), _dark)
+					_in_closet(_box(Vector3(0.1, 0.004, 0.012), Vector3(X2, UP + 0.047, Z2 + k * GAP2), _dark))
 		"closet_studs:1":
 			if _frame2.disabled:
 				_frame2.disabled = false
 				house.rebake()
-			_tween(_studs2[i], Vector3(X2, UP + 0.045, Z2 + i * GAP2), Quaternion.from_euler(Vector3(0, PI / 2, 0)), 0.45)
-			_screw(Vector3(X2 + 0.05, UP + 0.07, Z2 + i * GAP2), Vector3.RIGHT)
+			_closet_tween(_studs2[i], Vector3(X2, UP + 0.045, Z2 + i * GAP2), Quaternion.from_euler(Vector3(0, PI / 2, 0)), 0.45)
+			_in_closet(_screw(Vector3(X2 + 0.05, UP + 0.07, Z2 + i * GAP2), Vector3.RIGHT))
 		"closet_studs:2":
 			if t >= 1.0 and not _bits.has("topplate2"):
 				var p := house.prop("Plate", Vector3(X2, UP + 2.645, Z2 + GAP2 * (N2 - 1) / 2.0), 90, false, self)
 				p.scale.x = GAP2 * (N2 - 1) + 0.09
-				_bits["topplate2"] = p
+				_bits["topplate2"] = _in_closet(p)
 		"closet_drywall:0":
 			var sh := _sheets2[i]
 			var z0: float = SHEETS2[i][0]
 			var w: float = SHEETS2[i][1]
 			sh.scale = Vector3(w / 1.2, 2.6 / 2.4, 1.0)
-			_tween(sh, Vector3(FACE2, UP + 0.02, z0 + w / 2.0), Quaternion.from_euler(Vector3(0, PI / 2, 0)), 0.8)
+			_closet_tween(sh, Vector3(FACE2, UP + 0.02, z0 + w / 2.0), Quaternion.from_euler(Vector3(0, PI / 2, 0)), 0.8)
 		"closet_drywall:1":
 			for y in [0.35, 1.3, 2.25]:
-				_screws2.append(_screw(Vector3(FACE2 - 0.007, UP + y, Z2 + i * GAP2), Vector3.LEFT))
+				_screws2.append(_in_closet(_screw(Vector3(FACE2 - 0.007, UP + y, Z2 + i * GAP2), Vector3.LEFT)))
 		"closet_drywall:2":
-			_tape2.append(_box(Vector3(0.003, 2.55, 0.05), Vector3(FACE2 - 0.008, UP + 1.3, SHEETS2[1][0]), _tape_mat))
+			_tape2.append(_in_closet(_box(Vector3(0.003, 2.55, 0.05), Vector3(FACE2 - 0.008, UP + 1.3, SHEETS2[1][0]), _tape_mat)) as MeshInstance3D)
 		"closet_drywall:3":
 			for strip in _tape2:
 				strip.material_override = _mud_mat
@@ -141,6 +156,15 @@ func apply(job: String, step: int, i: int, t := 1.0) -> void:
 				_bits["lamp"] = shade
 		_:
 			super.apply(job, step, i, t)
+
+## A piece made in the closet's own frame, turned into place.
+func _in_closet(n: Node3D) -> Node3D:
+	n.transform = CLOSET * n.transform
+	return n
+
+## Moves a piece to a place given in the closet's frame.
+func _closet_tween(n: Node3D, to: Vector3, rot: Quaternion, seconds: float) -> void:
+	_tween(n, CLOSET * to, CLOSET.basis.get_rotation_quaternion() * rot, seconds)
 
 ## A named piece for the accident cut-scene: "stud" (the first, not yet fixed at the top), "sheet" (the
 ## one being lifted second).

@@ -1,6 +1,6 @@
 class_name Install
 extends Node3D
-## The install view: the camera moves in on the job, the tool bag opens as a tray at the bottom of the
+## The install view: the camera slides onto the job and leans in (same angle as always), the tool bag opens as a tray at the bottom of the
 ## screen, and the work happens on glowing hotspots in the scene. Pick the right tool (click it or press
 ## its number), then click each hotspot; on held steps keep the mouse button (or E) down on the hotspot.
 ## Every action plays the brother's work clip with the tool in his hand, and the piece appears in the
@@ -18,8 +18,6 @@ signal spot_done(job: Job, step: int, done: int)   # a hotspot (or a held step) 
 
 const PICK_PX := 34.0                      # how close the mouse must be to a hotspot, in pixels
 const ACTION_SECONDS := 0.75               # one hotspot: the clip plays, then the piece appears
-const VIEW := Vector2(45, -45)             # default view angles (yaw, pitch in degrees) for a step
-const CLOSEST := 6.5                       # the camera never comes nearer than this to the work
 
 ## Everything in the tool bag, in tray order: id -> display name.
 const EQUIPMENT := {
@@ -61,6 +59,9 @@ var _active := false
 var _mat_idle: StandardMaterial3D
 var _mat_hover: StandardMaterial3D
 var _mat_done: StandardMaterial3D
+var _faded := {}                           # furniture between the camera and a hotspot: body -> true
+
+const PROP_FADE := 0.75
 
 func _ready() -> void:
 	_mat_idle = _marker_mat(Color(1.0, 0.76, 0.36), 2.2)
@@ -170,17 +171,16 @@ func _begin_step() -> void:
 		worker.take_post(job.station + Vector3(0, Worksite.FLOOR, 0), _centre(_spots))
 	_frame_step()
 
-## Turns the camera to this step's view and backs off just enough to show every hotspot between the
-## step card and the tool bag.
+## Slides the view onto this step's hotspots and leans in as far as they all still fit between the step
+## card and the tool bag (never turning, never further out than the normal view).
 func _frame_step() -> void:
 	var at_step := step
 	await get_tree().process_frame             # the HUD lays out the step card first
 	if not _active or step != at_step:
 		return
-	var v: Vector2 = current().get("view", VIEW)
 	var safe: Rect2 = safe_rect.call() if safe_rect.is_valid() else get_viewport().get_visible_rect().grow(-120)
-	var fit := cam.fit(_spots, deg_to_rad(v.x), deg_to_rad(v.y), safe, CLOSEST)
-	cam.focus_on(fit[0], fit[1], deg_to_rad(v.x), deg_to_rad(v.y))
+	var fit := cam.fit(_spots, safe, IsoCamera.WORK_NEAR, IsoCamera.NORMAL)
+	cam.focus_on(fit[0], fit[1])
 
 static func _centre(points: Array) -> Vector3:
 	var c := Vector3.ZERO
@@ -242,6 +242,48 @@ func _process(delta: float) -> void:
 			m.scale = Vector3.ONE * pulse * (1.35 if k == hover else 1.0)
 	for a in people:
 		(a as Actor).set_faded(blocks_view(a))
+	_fade_furniture()
+
+## Furniture standing between the camera and a hotspot still to do fades out (walls are lowered by the
+## cutaway instead), so the camera never has to turn to see the work.
+func _fade_furniture() -> void:
+	var blocking := {}
+	var space := get_world_3d().direct_space_state
+	var from := cam.camera.global_position
+	for k in _spots.size():
+		if _done[k]:
+			continue
+		var exclude: Array[RID] = []
+		for tries in 8:
+			var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, _spots[k], 1, exclude))
+			if hit.is_empty() or (hit.position as Vector3).distance_to(_spots[k]) < 0.25:
+				break
+			exclude.append(hit.rid)
+			var body := hit.collider as Node3D
+			if body and not _is_wall(body) and not body.find_children("*", "GeometryInstance3D", true, false).is_empty():
+				blocking[body] = true
+	for body in _faded.keys():
+		if not blocking.has(body):
+			_set_fade(body, 0.0)
+	for body in blocking:
+		if not _faded.has(body):
+			_set_fade(body, PROP_FADE)
+	_faded = blocking
+
+func is_faded(body: Node) -> bool:
+	return _faded.has(body)
+
+func _is_wall(body: Node) -> bool:
+	for w in worksite.house.walls:
+		if (w.mesh as Node).get_parent() == body:
+			return true
+	return false
+
+func _set_fade(body: Node, amount: float) -> void:
+	if not is_instance_valid(body):
+		return
+	for g in body.find_children("*", "GeometryInstance3D", true, false):
+		(g as GeometryInstance3D).transparency = amount
 
 ## True if `a` stands between the camera and a hotspot still to do (the play-test checks the same).
 func blocks_view(a: Actor) -> bool:
@@ -288,6 +330,9 @@ func _after_spot() -> void:
 func _end(ok: bool) -> void:
 	_active = false
 	_clear_markers()
+	for body in _faded:
+		_set_fade(body, 0.0)
+	_faded.clear()
 	for a in people:
 		(a as Actor).set_faded(false)
 	worker.work("", "")
@@ -372,7 +417,7 @@ func _build_markers() -> void:
 	for k in _spots.size():
 		var mi := MeshInstance3D.new()
 		var sphere := SphereMesh.new()
-		var r := 0.075 if s.kind == "hold" else 0.055
+		var r := 0.11 if s.kind == "hold" else 0.085   # seen from the play camera, not a close-up
 		sphere.radius = r
 		sphere.height = r * 2.0
 		sphere.radial_segments = 16

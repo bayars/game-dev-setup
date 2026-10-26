@@ -234,25 +234,29 @@ func prompt(a: Actor) -> Array:
 	if main._carry != null:
 		return []
 	var t := _target(a)
+	return ["E", t.label] if not t.is_empty() else []
+
+## Everything `a` can click now: [{kind: body | token | setup | resident, at, label, reach, ...}].
+func targets(a: Actor) -> Array:
 	var out: Array = []
-	match t.get("kind", ""):
-		"body":
-			out = ["E", _lift_text()]
-			if phone_off < 0.0:
-				out += ["P", "Switch off his phone"]
-			return out
-		"token":
-			out = ["E", (t.token as Token).verb()]
-		"setup":
-			var spec: Dictionary = t.mark.spec
-			if spec.needs != "" and items.get(a, "") != spec.needs:
-				out = ["E", "%s  (bring the %s)" % [spec.text, String(spec.needs).replace("nailgun", "nail gun")]]
-			else:
-				out = ["E", spec.text]
-		"resident":
-			out = ["E", "Talk to %s" % (t.npc as Npc).display_name]
-	if _near_body(a):                          # something else is nearer: L still lifts him
-		out += ["L", "Lift him" if main._pair_ready() else "Drag him"]
+	if not active or _actions.has(a) or main._carry != null:
+		return out
+	if body and not body.is_carried():
+		out.append({"kind": "body", "at": body.where(), "reach": NEAR,
+			"label": _lift_text() + ("  ·  his phone" if phone_off < 0.0 else "")})
+	for t in tokens:
+		out.append({"kind": "token", "token": t, "at": t.global_position, "reach": 1.5, "label": t.verb()})
+	for m in _setup_marks:
+		var spec: Dictionary = m.spec
+		var label: String = spec.text
+		if spec.needs != "" and items.get(a, "") != spec.needs:
+			label += "  (bring the %s)" % String(spec.needs).replace("nailgun", "nail gun")
+		out.append({"kind": "setup", "mark": m, "at": spec.at, "reach": 1.3, "label": label})
+	for r in main.residents:
+		var n: Npc = r
+		if n.limp or not n.visible or n.mode in [Npc.Mode.AWAY, Npc.Mode.GATHER]:
+			continue
+		out.append({"kind": "resident", "npc": n, "at": n.global_position, "reach": 1.8, "label": "Talk to %s" % n.display_name})
 	return out
 
 func _lift_text() -> String:
@@ -260,7 +264,7 @@ func _lift_text() -> String:
 		return "Lift him together"
 	return "Drag him alone  (slow, loud, leaves marks;  H calls %s)" % main.other().display_name
 
-## L near him: lift (or drag) him whatever else is close by.
+## Lift (or drag) him.
 func lift(a: Actor) -> bool:
 	if not active or _actions.has(a) or main._carry != null or not _near_body(a):
 		return false
@@ -268,35 +272,38 @@ func lift(a: Actor) -> bool:
 	_drag_last = body.global_position
 	return true
 
-## The nearest thing `a` can use: {kind: body | token | setup | resident, ...} or {}.
+## The nearest thing `a` can use with E (the body only when nothing else is in reach), or {}.
 func _target(a: Actor) -> Dictionary:
 	var best := {}
 	var bd := INF
-	if _near_body(a):                          # E takes him only when nothing else is in reach (L always does)
-		bd = 1000.0
-		best = {"kind": "body"}
-	var t := _near_token(a)
-	if t and t.global_position.distance_to(a.global_position) < bd:
-		bd = t.global_position.distance_to(a.global_position)
-		best = {"kind": "token", "token": t}
-	var mark := _near_setup(a)
-	if not mark.is_empty() and (mark.spec.at as Vector3).distance_to(a.global_position) < bd:
-		bd = (mark.spec.at as Vector3).distance_to(a.global_position)
-		best = {"kind": "setup", "mark": mark}
-	var r := _near_resident(a)
-	if r and r.global_position.distance_to(a.global_position) < bd:
-		best = {"kind": "resident", "npc": r}
+	for t in targets(a):
+		var at: Vector3 = t.at
+		if absf(at.y - a.global_position.y) > 1.2:
+			continue
+		var d := Vector2(at.x - a.global_position.x, at.z - a.global_position.z).length()
+		if d >= t.reach:
+			continue
+		if t.kind == "body":
+			d = 1000.0
+		if d < bd:
+			bd = d
+			best = t
 	return best
 
-## E pressed by `a`. True if the cover-up used it.
+## E pressed by `a`: the nearest thing. True if the cover-up used it.
 func interact(a: Actor) -> bool:
+	return act_on(a, _target(a))
+
+## `a` uses `target` (one of `targets`; a click, or E on the nearest). True if it was used.
+func act_on(a: Actor, target: Dictionary) -> bool:
 	if not active or _actions.has(a) or main._carry != null:
 		return false
-	var target := _target(a)
 	match target.get("kind", ""):
 		"body":
-			main.pick_up(body)
-			_drag_last = body.global_position
+			if phone_off < 0.0:
+				_body_menu(a)                    # lift him, or switch his phone off first
+			else:
+				lift(a)
 			return true
 		"token":
 			var t: Token = target.token
@@ -315,7 +322,15 @@ func interact(a: Actor) -> bool:
 			return true
 	return false
 
-## P near him: switch his phone off (it stops ringing; the police will see when).
+## Daniel clicked while his phone is still on: lift him, or switch it off.
+func _body_menu(a: Actor) -> void:
+	var pick: int = await main.hud.choose("Daniel  (his phone is still on)",
+		[_lift_text(), "Switch off his phone", "Not now"])
+	match pick:
+		0: lift(a)
+		1: phone(a)
+
+## Switch his phone off (it stops ringing; the police will see when).
 func phone(a: Actor) -> bool:
 	if not active or phone_off >= 0.0 or main._carry != null or not _near_body(a):
 		return false
@@ -328,35 +343,6 @@ func _near_body(a: Actor) -> bool:
 		return false
 	var p := body.where()
 	return absf(p.y - a.global_position.y) < 1.2 and Vector2(p.x - a.global_position.x, p.z - a.global_position.z).length() < NEAR
-
-func _near_token(a: Actor) -> Token:
-	var best: Token = null
-	var bd := 1.5
-	for t in tokens:
-		var d := t.global_position.distance_to(a.global_position)
-		if d < bd and absf(t.global_position.y - a.global_position.y) < 1.0:
-			bd = d
-			best = t
-	return best
-
-func _near_setup(a: Actor) -> Dictionary:
-	var best := {}
-	var bd := 1.3
-	for m in _setup_marks:
-		var d := (m.spec.at as Vector3).distance_to(a.global_position)
-		if d < bd:
-			bd = d
-			best = m
-	return best
-
-func _near_resident(a: Actor) -> Npc:
-	for r in main.residents:
-		var n: Npc = r
-		if n.limp or not n.visible or n.mode in [Npc.Mode.AWAY, Npc.Mode.GATHER]:
-			continue
-		if n.global_position.distance_to(a.global_position) < 1.8:
-			return n
-	return null
 
 ## A timed action (tidying, setting up): the brother kneels for `seconds`, then `done` runs.
 func _act(a: Actor, seconds: float, text: String, done: Callable, at: Vector3) -> void:
@@ -387,7 +373,7 @@ func _take(t: Token, a: Actor) -> void:
 		if t.id == "stud":                     # back where it stood
 			var i := 0
 			var site: Worksite2 = main.site
-			t.linked.global_transform = Transform3D(Basis.from_euler(Vector3(0, PI / 2, 0)), Vector3(Worksite2.X2, House.UP + 0.045, Worksite2.Z2 + i * Worksite2.GAP2))
+			t.linked.global_transform = Worksite2.CLOSET * Transform3D(Basis.from_euler(Vector3(0, PI / 2, 0)), Vector3(Worksite2.X2, House.UP + 0.045, Worksite2.Z2 + i * Worksite2.GAP2))
 			site.house.rebake()
 		else:
 			t.linked.visible = false

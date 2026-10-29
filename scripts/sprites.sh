@@ -23,7 +23,7 @@ for n in "${NAMES[@]}"; do
   if [[ "$n" == "background" ]]; then
     cp "$OUT/$n/background.png" "$OUT/background.png"
   else
-    ffmpeg -hide_banner -loglevel error -y -start_number 0 -framerate 1 -i "$OUT/$n/frame_%02d.png" \
+    ffmpeg -nostdin -hide_banner -loglevel error -y -start_number 0 -framerate 1 -i "$OUT/$n/frame_%02d.png" \
       -vf "tile=8x1" -frames:v 1 "$OUT/${n}_sheet.png"
   fi
   echo "SPRITE_DONE $n"

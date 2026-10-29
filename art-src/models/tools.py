@@ -2,7 +2,8 @@
 
 Each item is a root Empty `T_<id>` whose origin is where a hand grips it; the handle runs along Z with
 the working end up (+Z) or forward (-Y). Icons: `tools_icon_<id>.png` (transparent, 160 px, Cycles),
-shown in the equipment tray. The ids match `Install.EQUIPMENT` in godot-house/scripts/install.gd.
+shown in the equipment tray. The ids match `Install.EQUIPMENT` in godot-house/scripts/install.gd
+(day 2 adds the nail gun and the lamp fitting).
 """
 import math
 import os
@@ -108,6 +109,16 @@ r = item("allen")
 box("Long", (0.006, 0.006, 0.1), (0, 0, 0.0), BLACK, r)
 box("Short", (0.006, 0.035, 0.006), (0, -0.016, 0.05), BLACK, r)
 
+r = item("nailgun")                   # pneumatic framing nailer: grip down, nose forward and down
+NAILER = mat("NailerRed", "#B8312A", roughness=0.45)
+cyl("Grip", 0.024, 0.13, (0, 0, 0.03), GRIP, r, verts=16)
+box("Body", (0.07, 0.3, 0.11), (0, -0.09, 0.15), NAILER, r, bevel=0.03)
+box("Cap", (0.075, 0.08, 0.05), (0, 0.02, 0.2), BLACK, r, bevel=0.015)
+cyl("Nose", 0.018, 0.12, (0, -0.25, 0.08), BLACK, r, verts=14)
+box("Magazine", (0.035, 0.24, 0.035), (0, -0.13, 0.02), BLACK, r, bevel=0.008, rot=(-0.35, 0, 0))
+cyl("Fitting", 0.008, 0.04, (0, 0, -0.05), STEEL, r, verts=10)
+box("Trigger", (0.016, 0.02, 0.03), (0, -0.035, 0.09), BLACK, r, bevel=0.005)
+
 # fitting parts (shown in the tray; the game places the real piece in the scene)
 r = item("sheet")
 box("Sheet", (0.24, 0.012, 0.48), (0, 0, 0.0), GYPSUM, r, bevel=0.004)
@@ -123,6 +134,11 @@ for sz in (-1, 1):
 r = item("wires")
 for i, m in enumerate((COPPER, BLACK, WHITE)):
     cyl("Wire", 0.004, 0.2, (-0.012 + i * 0.012, 0, 0), m, r, verts=8, rot=(0.25 * (i - 1), 0, 0))
+r = item("fitting")                   # a ceiling lamp: rose, cord and shade
+SHADE = mat("Shade", "#F2EADB", roughness=0.7)
+cyl("Rose", 0.05, 0.02, (0, 0, 0.2), PLATE, r, verts=20)
+cyl("Cord", 0.003, 0.12, (0, 0, 0.13), BLACK, r, verts=6)
+cone("Shade", 0.03, 0.09, 0.08, (0, 0, 0.04), SHADE, r, verts=24)
 r = item("legs")
 for i in range(4):
     cone("Leg", 0.02, 0.014, 0.2, (i * 0.05, 0, 0), WALNUT, r, verts=12)
@@ -133,7 +149,7 @@ export_glb(out_path())
 scene = bpy.context.scene
 common._enable_cuda()
 scene.render.engine = "CYCLES"
-scene.cycles.device = "GPU"
+scene.cycles.device = common.device()
 scene.cycles.samples = 48
 scene.cycles.use_denoising = True
 scene.render.film_transparent = True

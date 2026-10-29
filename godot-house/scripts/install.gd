@@ -1,6 +1,6 @@
 class_name Install
 extends Node3D
-## The install view: the camera moves in on the job, the tool bag opens as a tray at the bottom of the
+## The install view: the camera slides onto the job and leans in (same angle as always), the tool bag opens as a tray at the bottom of the
 ## screen, and the work happens on glowing hotspots in the scene. Pick the right tool (click it or press
 ## its number), then click each hotspot; on held steps keep the mouse button (or E) down on the hotspot.
 ## Every action plays the brother's work clip with the tool in his hand, and the piece appears in the
@@ -13,6 +13,8 @@ signal finished(job: Job)
 signal cancelled(job: Job)
 signal mistake(at: Vector3, loud: bool, what: String)
 signal changed                             # step, progress, selection or message changed (redraw the HUD)
+signal started(job: Job)
+signal spot_done(job: Job, step: int, done: int)   # a hotspot (or a held step) is finished
 
 const PICK_PX := 34.0                      # how close the mouse must be to a hotspot, in pixels
 const ACTION_SECONDS := 0.75               # one hotspot: the clip plays, then the piece appears
@@ -23,6 +25,7 @@ const EQUIPMENT := {
 	"screwdriver": "Screwdriver", "stripper": "Wire stripper", "taping": "Tape + knife", "mud": "Joint mud",
 	"mallet": "Mallet", "wrench": "Wrench", "allen": "Allen key", "level": "Spirit level",
 	"sheet": "Drywall sheet", "planks": "Laminate", "underlay": "Underlay", "plate": "Socket cover",
+	"nailgun": "Nail gun", "fitting": "Lamp fitting",
 }
 
 var job: Job
@@ -37,6 +40,12 @@ var worker: Actor
 var helper: Actor                          # holds the sheet on two-person jobs
 var worksite: Worksite
 var cam: IsoCamera
+var safe_rect: Callable                    # -> Rect2: the screen the HUD leaves free for the hotspots
+var people: Array = []                     # everyone in the house: faded out while in front of the work
+var sfx: Sfx
+var _hold_sound := 0.0
+
+const TOOL_SOUND := {"drill": "drill", "screwdriver": "screwdriver", "hammer": "hammer", "mallet": "hammer", "nailgun": "nailgun"}
 
 var _spots: Array = []
 var _done: Array[bool] = []
@@ -50,6 +59,9 @@ var _active := false
 var _mat_idle: StandardMaterial3D
 var _mat_hover: StandardMaterial3D
 var _mat_done: StandardMaterial3D
+var _faded := {}                           # furniture between the camera and a hotspot: body -> true
+
+const PROP_FADE := 0.75
 
 func _ready() -> void:
 	_mat_idle = _marker_mat(Color(1.0, 0.76, 0.36), 2.2)
@@ -71,13 +83,7 @@ func start(j: Job, w: Actor, h: Actor, ws: Worksite, c: IsoCamera) -> void:
 	step = 0
 	_active = true
 	_begin_step()
-	var all: Array = []
-	for s in j.steps.size():
-		all += ws.spots(j.id, s)
-	var centre := Vector3.ZERO
-	for p in all:
-		centre += p
-	cam.focus_on(centre / maxf(1.0, all.size()), 7.5)
+	started.emit(j)
 
 func current() -> Dictionary:
 	return job.steps[step] if _active else {}
@@ -116,6 +122,8 @@ func use_spot(i: int) -> void:
 		return
 	_pending = i
 	_acting = ACTION_SECONDS
+	if sfx and TOOL_SOUND.has(selected):
+		sfx.play(TOOL_SOUND[selected], _spots[i], -4.0)
 	worker.face(_spots[i])
 	worker.work(Worksite.anim_for(selected, _spots[i].y - worker.global_position.y), selected)
 	if helper:
@@ -136,6 +144,8 @@ func _right_tool(s: Dictionary) -> bool:
 		return false
 	if selected != s.tool:
 		var loud := selected == "hammer"
+		if loud and sfx:
+			sfx.play("hammer", worker.global_position)
 		_say("Not the %s for this.%s" % [EQUIPMENT[selected].to_lower(), " And everyone heard that." if loud else ""], true)
 		show_tool = true
 		mistake.emit(worker.global_position, loud, "a loud bang")
@@ -153,6 +163,30 @@ func _begin_step() -> void:
 	_build_markers()
 	message = ""
 	changed.emit()
+	var s := current()
+	if s.has("at"):                        # this step is done somewhere else (the sheet stack)
+		var at: Vector3 = s.at
+		worker.take_post(Vector3(at.x, at.y + Worksite.FLOOR, at.z), _spots[0])
+	elif step > 0 and job.steps[step - 1].has("at"):
+		worker.take_post(job.station + Vector3(0, Worksite.FLOOR, 0), _centre(_spots))
+	_frame_step()
+
+## Slides the view onto this step's hotspots and leans in as far as they all still fit between the step
+## card and the tool bag (never turning, never further out than the normal view).
+func _frame_step() -> void:
+	var at_step := step
+	await get_tree().process_frame             # the HUD lays out the step card first
+	if not _active or step != at_step:
+		return
+	var safe: Rect2 = safe_rect.call() if safe_rect.is_valid() else get_viewport().get_visible_rect().grow(-120)
+	var fit := cam.fit(_spots, safe, IsoCamera.WORK_NEAR, IsoCamera.NORMAL)
+	cam.focus_on(fit[0], fit[1])
+
+static func _centre(points: Array) -> Vector3:
+	var c := Vector3.ZERO
+	for p in points:
+		c += p
+	return c / maxf(1.0, points.size())
 
 func _say(text: String, bad := false) -> void:
 	message = text
@@ -177,11 +211,17 @@ func _process(delta: float) -> void:
 			if helper:
 				helper.work("", "")
 			_markers[i].material_override = _mat_done
+			var at_step := step
 			_after_spot()
+			spot_done.emit(job, at_step, _count_done(at_step))
 	elif s.kind == "hold":
 		var holding := (Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and hover == 0) or Input.is_physical_key_pressed(KEY_E)
 		if holding and _right_tool_quiet(s):
 			_hold += delta
+			_hold_sound -= delta
+			if _hold_sound <= 0.0 and sfx and TOOL_SOUND.has(selected):
+				_hold_sound = 0.85
+				sfx.play(TOOL_SOUND[selected], _spots[0], -6.0)
 			worker.face(_spots[0])
 			worker.work(Worksite.anim_for(selected, _spots[0].y - worker.global_position.y), selected)
 			worksite.apply(job.id, step, 0, hold_ratio())
@@ -189,7 +229,9 @@ func _process(delta: float) -> void:
 			if _hold >= float(s.seconds):
 				_done[0] = true
 				worker.work("", selected)
+				var at_step := step
 				_after_spot()
+				spot_done.emit(job, at_step, 1)
 		else:
 			worker.work("", selected)
 	for k in _markers.size():
@@ -198,6 +240,68 @@ func _process(delta: float) -> void:
 			m.material_override = _mat_hover if k == hover else _mat_idle
 			var pulse := 1.0 + 0.15 * sin(Time.get_ticks_msec() / 180.0 + k)
 			m.scale = Vector3.ONE * pulse * (1.35 if k == hover else 1.0)
+	for a in people:
+		(a as Actor).set_faded(blocks_view(a))
+	_fade_furniture()
+
+## Furniture standing between the camera and a hotspot still to do fades out (walls are lowered by the
+## cutaway instead), so the camera never has to turn to see the work.
+func _fade_furniture() -> void:
+	var blocking := {}
+	var space := get_world_3d().direct_space_state
+	var from := cam.camera.global_position
+	for k in _spots.size():
+		if _done[k]:
+			continue
+		var exclude: Array[RID] = []
+		for tries in 8:
+			var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, _spots[k], 1, exclude))
+			if hit.is_empty() or (hit.position as Vector3).distance_to(_spots[k]) < 0.25:
+				break
+			exclude.append(hit.rid)
+			var body := hit.collider as Node3D
+			if body and not _is_wall(body) and not body.find_children("*", "GeometryInstance3D", true, false).is_empty():
+				blocking[body] = true
+	for body in _faded.keys():
+		if not blocking.has(body):
+			_set_fade(body, 0.0)
+	for body in blocking:
+		if not _faded.has(body):
+			_set_fade(body, PROP_FADE)
+	_faded = blocking
+
+func is_faded(body: Node) -> bool:
+	return _faded.has(body)
+
+func _is_wall(body: Node) -> bool:
+	for w in worksite.house.walls:
+		if (w.mesh as Node).get_parent() == body:
+			return true
+	return false
+
+func _set_fade(body: Node, amount: float) -> void:
+	if not is_instance_valid(body):
+		return
+	for g in body.find_children("*", "GeometryInstance3D", true, false):
+		(g as GeometryInstance3D).transparency = amount
+
+## True if `a` stands between the camera and a hotspot still to do (the play-test checks the same).
+func blocks_view(a: Actor) -> bool:
+	if not a.visible:
+		return false
+	var c := cam.camera
+	var top := a.global_position + Vector3(0, 1.85 * a.size, 0)
+	if c.is_position_behind(a.global_position) or c.is_position_behind(top):
+		return false
+	var feet := c.unproject_position(a.global_position)
+	var head := c.unproject_position(top)
+	var half := c.unproject_position(a.global_position + c.global_basis.x * 0.32).distance_to(feet)
+	var body := Rect2(feet, Vector2.ZERO).expand(head).grow_individual(half, half * 0.5, half, half * 0.5)
+	var depth := c.global_position.distance_to(a.global_position + Vector3(0, 0.9 * a.size, 0))
+	for k in _spots.size():
+		if not _done[k] and body.has_point(c.unproject_position(_spots[k])) and depth < c.global_position.distance_to(_spots[k]) - 0.15:
+			return true
+	return false
 
 func _right_tool_quiet(s: Dictionary) -> bool:
 	if selected == s.tool:
@@ -206,6 +310,12 @@ func _right_tool_quiet(s: Dictionary) -> bool:
 		if message == "":
 			_right_tool(s)
 	return false
+
+## Hotspots finished in `at_step` (all of them once the view has moved on to the next step).
+func _count_done(at_step: int) -> int:
+	if at_step != step:
+		return 1 << 20
+	return progress().x
 
 func _after_spot() -> void:
 	if _done.all(func(d): return d):
@@ -220,6 +330,11 @@ func _after_spot() -> void:
 func _end(ok: bool) -> void:
 	_active = false
 	_clear_markers()
+	for body in _faded:
+		_set_fade(body, 0.0)
+	_faded.clear()
+	for a in people:
+		(a as Actor).set_faded(false)
 	worker.work("", "")
 	worker.hold_tool("")
 	if helper:
@@ -302,7 +417,7 @@ func _build_markers() -> void:
 	for k in _spots.size():
 		var mi := MeshInstance3D.new()
 		var sphere := SphereMesh.new()
-		var r := 0.09 if s.kind == "hold" else 0.055
+		var r := 0.11 if s.kind == "hold" else 0.085   # seen from the play camera, not a close-up
 		sphere.radius = r
 		sphere.height = r * 2.0
 		sphere.radial_segments = 16

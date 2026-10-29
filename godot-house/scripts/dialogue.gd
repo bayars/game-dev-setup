@@ -15,6 +15,7 @@ var _skip := false
 var _style: StyleBoxFlat
 
 func _ready() -> void:
+	name = "Dialogue"
 	custom_minimum_size = Vector2(720, 0)
 	anchor_left = 0.5            # bottom centre, growing upward with its content
 	anchor_right = 0.5
@@ -27,6 +28,7 @@ func _ready() -> void:
 	grow_horizontal = Control.GROW_DIRECTION_BOTH
 	grow_vertical = Control.GROW_DIRECTION_BEGIN
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	process_mode = Node.PROCESS_MODE_PAUSABLE
 	_style = UiTheme.panel(UiTheme.BG, UiTheme.RADIUS, 16)
 	_style.border_width_left = 4
 	add_theme_stylebox_override("panel", _style)
@@ -54,7 +56,8 @@ func play(lines: Array) -> void:
 		_skip = false
 		while t < hold and not _skip:
 			await get_tree().process_frame
-			t += get_process_delta_time() / maxf(Engine.time_scale, 0.001)
+			if not get_tree().paused:
+				t += get_process_delta_time() / maxf(Engine.time_scale, 0.001)
 		if fast:
 			await get_tree().process_frame
 	visible = false

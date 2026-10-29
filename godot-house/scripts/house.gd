@@ -80,7 +80,7 @@ const WALLS := [
 	[Vector2(4.5, 7.5), Vector2(9, 7.5), [], 1],
 	[Vector2(4.5, 6), Vector2(4.5, 12), [[0.15, 1.2]], 1],             # Sofia's door off the hall
 	[Vector2(9, 0), Vector2(9, 12), [[2.0, 1.2], [6.0, 1.5], [9.5, 1.2]], 1],
-	[Vector2(11, 0), Vector2(11, 12), [[1.5, 1.2], [5.5, 1.2], [10.8, 1.15]], 1],   # ..., top of the stairs
+	[Vector2(11, 0), Vector2(11, 12), [[1.5, 1.2], [5.5, 1.2], [8.6, 1.2], [10.8, 1.15]], 1],   # ..., landing, top of the stairs
 	[Vector2(11, 4), Vector2(16, 4), [], 1],
 	[Vector2(11, 8), Vector2(16, 8), [], 1],
 	[Vector2(11.15, 10.85), Vector2(16, 10.85), [], 1, 1.0],          # railing along the stairwell
@@ -93,7 +93,6 @@ const FURNITURE := [
 	["Counter", Vector3(1.95, 0, 0.39), 0, true],
 	["CounterShort", Vector3(4.25, 0, 0.39), 0, true],
 	["Fridge", Vector3(6.0, 0, 0.43), 0, true],
-	["DrywallStack", Vector3(2.9, 0, 5.7), 90, true],
 	["ToolBag", Vector3(7.8, 0, 6.3), 0, true],
 	["Shelves", Vector3(0.4, 0, 9.0), 90, true],
 	["Workbench", Vector3(7.6, 0, 7.45), 0, true],
@@ -107,7 +106,6 @@ const FURNITURE := [
 
 	["Bed", Vector3(0.7, UP, 1.2), 0, true],
 	["Desk", Vector3(3.6, UP, 0.4), 0, true],
-	["Wardrobe", Vector3(6.4, UP, 0.4), 0, true],
 	["Rug", Vector3(3.8, UP, 3.4), 0, false],
 	["Bed", Vector3(0.7, UP, 7.2), 0, true],
 	["Desk", Vector3(2.4, UP, 11.6), 180, true],
@@ -146,11 +144,12 @@ func build(gfx: Graphics) -> void:
 		var look: Array = FLOOR_LOOK[r[0]]
 		var mat := gfx.pbr(look[0], 1.3, look[1])
 		if r[2] == 0:
-			_static_box(self, Vector3(rect.size.x, 0.04, rect.size.y), Vector3(rect.get_center().x, 0.02, rect.get_center().y), mat)
+			var f := _static_box(self, Vector3(rect.size.x, 0.04, rect.size.y), Vector3(rect.get_center().x, 0.02, rect.get_center().y), mat)
+			_thicken(f, 0.5)
 		elif r[0] == "Landing":
 			_slab_with_hole(rect, Rect2(STAIR_X1, STAIR_Z0, STAIR_X0 - STAIR_X1, STAIR_Z1 - STAIR_Z0), mat)
 		else:
-			_static_box(upper, Vector3(rect.size.x, SLAB, rect.size.y), Vector3(rect.get_center().x, H + SLAB / 2, rect.get_center().y), mat)
+			_thicken(_static_box(upper, Vector3(rect.size.x, SLAB, rect.size.y), Vector3(rect.get_center().x, H + SLAB / 2, rect.get_center().y), mat), 0.25)
 	_static_box(self, Vector3(5, 0.03, 9), Vector3(4, 0.015, 16.5), gfx.pbr("stone", 2.5, Color(0.6, 0.6, 0.62)))  # driveway
 	for w in WALLS:
 		_wall(w[0], w[1], w[2], w[3], w[4] if w.size() > 4 else H)
@@ -160,6 +159,13 @@ func build(gfx: Graphics) -> void:
 		if at.y == 0.0:
 			at.y = 0.04                         # on top of the ground floor boards
 		prop(f[0], at, f[2], f[3])
+
+## The prop library is never in the scene tree: free it with the house (an orphan's render instances
+## made the exported build crash on quit).
+func _exit_tree() -> void:
+	if _props_root:
+		_props_root.free()
+		_props_root = null
 
 ## A copy of a Blender prop placed in the house. Solid props get a box collider around their mesh.
 func prop(prop_name: String, at: Vector3, yaw_deg := 0.0, solid := true, parent: Node = null) -> Node3D:
@@ -267,7 +273,8 @@ func update_cutaway(focus: Vector3, toward_camera: Vector2, delta: float) -> voi
 		if w.level == lvl:
 			var cp := Geometry2D.get_closest_point_to_segment(f, w.a, w.b)
 			var rel := cp - f
-			want = 1.0 if rel.dot(toward_camera) > 0.25 and rel.length() < 16.0 else 0.0
+			# a wall on the camera's side comes down (a very near one even when only just on that side)
+			want = 1.0 if rel.dot(toward_camera) > minf(0.25, rel.length() * 0.5) and rel.length() < 16.0 else 0.0
 		w.cut = move_toward(w.cut, want, delta * 4.0)
 		(w.mesh as MeshInstance3D).set_instance_shader_parameter("cut", w.cut)
 
@@ -334,6 +341,15 @@ func _static_box(parent: Node, size: Vector3, pos: Vector3, material: Material, 
 	parent.add_child(body)
 	return body
 
+## Makes a floor's collider `extra` metres deeper below its surface (the drawn floor stays as it is), so a
+## falling ragdoll cannot pass through a thin board.
+func _thicken(body: StaticBody3D, extra: float) -> void:
+	var cs := body.get_child(0) as CollisionShape3D
+	var box := (cs.shape as BoxShape3D).duplicate() as BoxShape3D
+	box.size.y += extra
+	cs.shape = box
+	cs.position.y -= extra / 2.0
+
 ## An upper-floor slab over `rect` with the stairwell `hole` left open.
 func _slab_with_hole(rect: Rect2, hole: Rect2, material: Material) -> void:
 	var parts := [
@@ -343,7 +359,7 @@ func _slab_with_hole(rect: Rect2, hole: Rect2, material: Material) -> void:
 	]
 	for p in parts:
 		if p.size.x > 0.01 and p.size.y > 0.01:
-			_static_box(upper, Vector3(p.size.x, SLAB, p.size.y), Vector3(p.get_center().x, H + SLAB / 2, p.get_center().y), material)
+			_thicken(_static_box(upper, Vector3(p.size.x, SLAB, p.size.y), Vector3(p.get_center().x, H + SLAB / 2, p.get_center().y), material), 0.25)
 
 ## Rounded steps to look at, and one smooth ramp underneath to walk on (and to bake the navmesh from).
 func _stairs() -> void:

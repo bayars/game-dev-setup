@@ -39,7 +39,7 @@ static func jobs(couch: Carryable, dishwasher: Carryable) -> Dictionary:
 	j.needs_two = true
 	j.requires = ["studs"]
 	j.steps = [
-		{"tool": "knife", "kind": "hold", "seconds": 1.2, "text": "Score and snap the last sheet to size"},
+		{"tool": "knife", "kind": "hold", "seconds": 1.2, "text": "Score and snap the last sheet to size", "at": Vector3(8.05, 0, 5.7)},
 		{"tool": "sheet", "kind": "spots", "text": "Lift each sheet onto the studs (Tomas holds it while you fix it)"},
 		{"tool": "drill", "kind": "spots", "text": "Screw the sheets to every stud"},
 		{"tool": "taping", "kind": "spots", "text": "Tape the two seams"},
@@ -48,7 +48,7 @@ static func jobs(couch: Carryable, dishwasher: Carryable) -> Dictionary:
 	j.pay = 90
 	list.append(j)
 
-	j = Job.new("wiring", "Wire the new socket", Vector3(7.6, 0, 1.0))
+	j = Job.new("wiring", "Wire the new socket", Vector3(7.05, 0, 0.95))
 	j.steps = [
 		{"tool": "stripper", "kind": "hold", "seconds": 1.2, "text": "Strip the wire ends"},
 		{"tool": "screwdriver", "kind": "order", "text": "Connect earth first, then live, then neutral"},
@@ -66,7 +66,7 @@ static func jobs(couch: Carryable, dishwasher: Carryable) -> Dictionary:
 	j.pay = 70
 	list.append(j)
 
-	j = Job.new("dishwasher", "Install the dishwasher", DISHWASHER_TARGET + Vector3(0, 0, 0.75))
+	j = Job.new("dishwasher", "Install the dishwasher", Vector3(6.15, 0, 1.45))
 	j.requires = ["dishwasher_in"]
 	j.steps = [
 		{"tool": "knife", "kind": "hold", "seconds": 1.2, "text": "Cut the box open"},
@@ -80,7 +80,7 @@ static func jobs(couch: Carryable, dishwasher: Carryable) -> Dictionary:
 	j.requires = ["couch_in"]
 	j.steps = [
 		{"tool": "knife", "kind": "hold", "seconds": 1.2, "text": "Cut the box open"},
-		{"tool": "allen", "kind": "spots", "text": "Bolt the legs onto the couch"},
+		{"tool": "allen", "kind": "spots", "text": "Bolt the legs onto the upturned couch"},
 		{"tool": "allen", "kind": "spots", "text": "Bolt the legs onto the table"},
 	]
 	j.pay = 50
@@ -109,10 +109,10 @@ const INTRO := [
 ]
 
 const HINTS := {
-	"start": "Today's jobs are on the left. Walk to a job and press E to start working on it.",
+	"start": "Today's jobs are on the left. Click a job's ring on the floor to walk over and start working on it.",
 	"install": "Pick the right tool from the bag (click or 1-9), then click the glowing spots. Wheel zooms, Esc steps back.",
 	"solo_carry": "Alone it's slow and loud: the rings show who can hear you. Press H to call Tomas and lift together.",
-	"pair_carry": "Together it's fast and quiet. Press E at the marked spot to put it down.",
+	"pair_carry": "Together it's fast and quiet. At the marked spot, click it (or press E) to put it down.",
 	"needs_two": "This one needs two. Send Tomas from the job list, or press H to call him, then start.",
 	"stairs": "The stairs are in the east room, past the hallway.",
 }

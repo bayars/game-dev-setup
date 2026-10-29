@@ -164,7 +164,19 @@ def _bounds():
     return lo, hi
 
 
+def cpu_only():
+    """CYCLES_CPU=1 (models.sh --cpu): render on the server's CPU when the shared P4 has no memory free."""
+    return os.environ.get("CYCLES_CPU", "") == "1"
+
+
+def device():
+    return "CPU" if cpu_only() else "GPU"
+
+
 def _enable_cuda():
+    if cpu_only():
+        print("Cycles on the CPU (CYCLES_CPU=1)")
+        return
     prefs = bpy.context.preferences.addons["cycles"].preferences
     prefs.compute_device_type = "CUDA"
     prefs.get_devices()
@@ -183,7 +195,7 @@ def preview(png_path, direction=(-0.7, -1.0, 0.55), size=640, margin=1.25):
             o.hide_render = True  # collision helpers: part of the glTF, not of the picture
     _enable_cuda()
     scene.render.engine = "CYCLES"
-    scene.cycles.device = "GPU"
+    scene.cycles.device = device()
     scene.cycles.samples = 96
     scene.cycles.use_denoising = True
     scene.render.resolution_x = scene.render.resolution_y = size

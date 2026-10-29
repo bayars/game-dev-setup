@@ -1,7 +1,7 @@
 class_name Actor
 extends CharacterBody3D
-## A person in the house: the rigged person model, navigation (click-to-move, orders, schedules) and
-## direct steering (WASD for the controlled brother). Walk/run/carry playback follows the real speed;
+## A person in the house: the rigged person model and navigation (click-to-move, orders, schedules):
+## everyone walks on paths only. Walk/run/carry playback follows the real speed;
 ## work clips (`work`) and a tool in the right hand (`hold_tool`) come from the install view.
 
 signal arrived
@@ -16,11 +16,13 @@ const TOOLS := preload("res://assets/models/tools.glb")
 ## How a tool sits in the right hand: the grip (tool Y) across the palm, the working end forward.
 static var GRIP := Transform3D(Basis.from_euler(Vector3(PI / 2, 0, 0)), Vector3(0, 0.07, 0.02))
 const ACCEL := 12.0
+const STRIDE := 0.7            # metres between footsteps (scaled by size)
+
+static var sfx: Sfx            # footsteps (set by main)
 const GRAVITY := 20.0
 
 var display_name := ""
 var controlled := false
-var steer := Vector2.ZERO      # world xz direction for direct control (WASD); overrides navigation
 var running := false
 var busy := false              # in the install view or holding something in place: does not move
 var speed_mul := 1.0           # carrying slows you down
@@ -41,6 +43,8 @@ var _tool_id := ""
 var _tools_src: Node
 var _fresh := 0                # physics frames since go_to; the agent needs a frame to compute a path
 var _post: Variant = null      # take_post: a working spot to step to while busy
+var _stalled := 0.0            # seconds a walk has made no headway (a re-path follows)
+var _repaths := 0
 var _post_look := Vector3.ZERO
 var size := 1.0                # model scale (height / built height); strides scale with it
 var skeleton: Skeleton3D
@@ -48,6 +52,17 @@ var limp := false              # a ragdoll (go_limp) or a carried body (hold_lim
 var _shape: CollisionShape3D
 var _label: Label3D
 var _sim: PhysicalBoneSimulator3D
+var _trail: Array[Vector3] = []   # pair carrying: where the lead has walked
+var _trail_lead: Actor = null
+var _trail_behind := 0.0
+var _held := false             # a limp body being carried (hold_limp): animated pose, no physics
+var _meshes: Array[GeometryInstance3D] = []
+var _step_left := 0.0
+var _step_i := 0
+var _fade := 0.0               # 0 solid .. FADED see-through (standing in front of the work)
+var _fade_goal := 0.0
+
+const FADED := 0.78
 
 ## `who` is a name in People.CAST: its own model, scaled to its height.
 func setup(who: String, gfx: Graphics) -> void:
@@ -57,7 +72,7 @@ func setup(who: String, gfx: Graphics) -> void:
 	collision_mask = 1       # so nobody gets stuck in a 1.2 m doorway
 	_shape = CollisionShape3D.new()
 	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.24
+	capsule.radius = 0.2              # 0.1 m inside the navmesh margin (0.3), so corners are never clipped
 	capsule.height = 1.75 * size
 	_shape.shape = capsule
 	_shape.position.y = 0.875 * size
@@ -67,6 +82,8 @@ func setup(who: String, gfx: Graphics) -> void:
 	model.scale = Vector3.ONE * size
 	add_child(model)
 	gfx.style_person(model)
+	for mi in model.find_children("*", "MeshInstance3D", true, false):
+		_meshes.append(mi)
 	_anim = model.find_child("AnimationPlayer", true, false)
 	if _anim:
 		_anim.play("idle")
@@ -80,7 +97,7 @@ func setup(who: String, gfx: Graphics) -> void:
 	agent = NavigationAgent3D.new()
 	agent.radius = 0.35
 	agent.height = 1.8
-	agent.path_desired_distance = 0.25  # small: a doorway corner counts as passed only when actually rounded
+	agent.path_desired_distance = 0.12  # small: a doorway corner counts as passed only when actually rounded
 	agent.path_height_offset = 0.2       # the baked navmesh sits ~0.2 m above the floor
 	agent.target_desired_distance = 0.45
 	add_child(agent)
@@ -116,6 +133,11 @@ func setup(who: String, gfx: Graphics) -> void:
 	_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_ring)
 
+func _exit_tree() -> void:
+	if _tools_src:                             # the tool library is not in the tree: free it with us
+		_tools_src.free()
+		_tools_src = null
+
 ## Play a work clip ("" to go back to walking and idling).
 func work(anim: String, tool := "") -> void:
 	work_anim = anim
@@ -141,25 +163,48 @@ func hold_tool(id: String) -> void:
 	_tool.transform = GRIP
 	_hand.add_child(_tool)
 
+## See-through while standing between the camera and the work in the install view.
+func set_faded(on: bool) -> void:
+	_fade_goal = FADED if on else 0.0
+
+func is_faded() -> bool:
+	return _fade_goal > 0.0
+
+func _update_fade(delta: float) -> void:
+	if is_equal_approx(_fade, _fade_goal):
+		return
+	_fade = move_toward(_fade, _fade_goal, delta * 4.0)
+	for g in _meshes:
+		g.transparency = _fade
+	if _tool:
+		for g in _tool.find_children("*", "GeometryInstance3D", true, false):
+			(g as GeometryInstance3D).transparency = _fade
+
 func tool_in_hand() -> String:
 	return _tool_id
 
 func set_controlled(on: bool) -> void:
 	controlled = on
 	_ring.visible = on
-	if not on:
-		steer = Vector2.ZERO
 
 func go_to(p: Vector3) -> void:
 	agent.target_position = p
 	_going = true
 	_fresh = 0
+	_stalled = 0.0
+	_repaths = 0
 
-## While busy: walk straight to a nearby working spot and face `look` there (pair jobs keep apart).
+## While busy: walk to a working spot (around anything in the way) and face `look` there.
 func take_post(p: Vector3, look: Vector3) -> void:
+	var map := get_world_3d().navigation_map
+	if NavigationServer3D.map_get_iteration_id(map) > 0:   # a spot against a wall moves out to where one can stand
+		var q := NavigationServer3D.map_get_closest_point(map, p + Vector3(0, 0.2, 0))
+		p = Vector3(q.x, p.y, q.z)
 	_post = p
 	_post_look = look
 	_going = false
+	agent.target_position = p
+	_fresh = 0
 
 func stop() -> void:
 	_going = false
@@ -181,28 +226,35 @@ func is_moving() -> bool:
 func room() -> String:
 	return House.room_at(global_position)
 
+func _process(delta: float) -> void:
+	_update_fade(delta)
+
 func _physics_process(delta: float) -> void:
 	if limp:
 		return
 	var dir := Vector3.ZERO
+	if not busy:
+		_post = null                          # a working spot only lasts while the work does
 	if busy:
 		if _post != null:             # step over to the assigned working spot, then face the work
 			var to_post: Vector3 = _post - global_position
 			to_post.y = 0.0
-			if to_post.length() > 0.06:
+			_fresh += 1
+			if to_post.length() > 0.6 and _fresh > 2 and not agent.is_navigation_finished():
+				var to := agent.get_next_path_position() - global_position
+				to.y = 0.0
+				dir = to.normalized()
+			elif to_post.length() > 0.06:
 				dir = to_post.normalized() * minf(1.0, to_post.length() * 2.5)
 			else:
 				_post = null
 				face(_post_look)
 	elif lead != null:
-		var spot := lead.global_position - lead.forward() * lead_gap
+		var spot := _trail_point()
 		var to_spot := spot - global_position
 		to_spot.y = 0.0
-		if to_spot.length() > 0.08:
-			dir = to_spot.normalized() * minf(1.0, to_spot.length() * 2.0)
-		_going = false
-	elif steer.length() > 0.05:
-		dir = Vector3(steer.x, 0, steer.y).limit_length(1.0)
+		if to_spot.length() > 0.02:            # a little faster while he lags behind
+			dir = to_spot.normalized() * clampf((_trail_behind - lead_gap) * 2.0, 0.3, 1.4)
 		_going = false
 	elif _going:
 		_fresh += 1
@@ -219,13 +271,85 @@ func _physics_process(delta: float) -> void:
 	velocity.z = move_toward(velocity.z, want.z, ACCEL * delta * speed)
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * delta
 	move_and_slide()
+	if dir != Vector3.ZERO:
+		_keep_on_navmesh()
 	var planar := Vector2(velocity.x, velocity.z)
+	_footsteps(planar.length() * delta)
+	if _going and _fresh > 2:
+		_unstick(planar.length(), delta)
 	if lead != null:                  # face the lead and the load between you
 		var d := lead.global_position - global_position
 		model.rotation.y = lerp_angle(model.rotation.y, atan2(d.x, d.z), 10.0 * delta)
 	elif planar.length() > 0.2:
 		model.rotation.y = lerp_angle(model.rotation.y, atan2(planar.x, planar.y), 10.0 * delta)
 	_animate(planar.length())
+
+## Pair carrying: the next of the lead's footsteps to walk to (through the doorways and down the stairs
+## the way he went, never a straight line through a wall), or where we stand when close enough behind.
+func _trail_point() -> Vector3:
+	var p := lead.global_position
+	if _trail_lead != lead:
+		_trail_lead = lead
+		_trail = [p]
+	if _trail[-1].distance_to(p) > 0.1:
+		_trail.append(p)
+	while _trail.size() > 1 and Vector2(_trail[0].x - global_position.x, _trail[0].z - global_position.z).length() < 0.25:
+		_trail.pop_front()
+	var length := Vector2(_trail[0].x - global_position.x, _trail[0].z - global_position.z).length()
+	for k in range(1, _trail.size()):
+		length += _trail[k].distance_to(_trail[k - 1])
+	_trail_behind = length
+	if length <= lead_gap:
+		return global_position
+	return _trail[0]
+
+func _footsteps(moved: float) -> void:
+	if sfx == null or not visible or moved <= 0.0:
+		return
+	_step_left -= moved
+	if _step_left > 0.0:
+		return
+	_step_left = STRIDE * size
+	_step_i += 1
+	var stone := House.room_at(global_position + Vector3(0, 0.3, 0)) in ["Bathroom", "Upstairs bathroom", "Garage", "Outside"]
+	sfx.play("step_%s_%d" % ["stone" if stone else "wood", _step_i % 3], global_position, -10.0 if not controlled else -6.0, randf_range(0.92, 1.08))
+
+## Keeps a person on the walkable area (the navigation mesh, 0.3 m in from walls and furniture), so the
+## keys or a carry never push anyone into a corner that click-to-move cannot find a way out of.
+func _keep_on_navmesh() -> void:
+	var map := get_world_3d().navigation_map
+	if NavigationServer3D.map_get_iteration_id(map) == 0:
+		return
+	var p := global_position
+	var q := NavigationServer3D.map_get_closest_point(map, p + Vector3(0, 0.2, 0))
+	var inward := Vector2(q.x - p.x, q.z - p.z)
+	# on the stair ramp the closest point sits a few cm uphill (the mesh floats over the slope): leave it
+	var excess := inward.length() - 0.1
+	if excess <= 0.0 or absf(q.y - p.y) > 0.8:
+		return
+	var n := inward.normalized()
+	global_position += Vector3(n.x, 0, n.y) * excess
+	var v := Vector2(velocity.x, velocity.z)
+	if v.dot(n) < 0.0:                         # no walking on the spot against the edge
+		v -= n * v.dot(n)
+		velocity.x = v.x
+		velocity.z = v.y
+
+## A walk that makes no headway for a second asks for a new path; after three tries it gives up where it is.
+func _unstick(planar: float, delta: float) -> void:
+	if planar > 0.3:
+		_stalled = 0.0
+		return
+	_stalled += delta
+	if _stalled < 1.0:
+		return
+	_stalled = 0.0
+	_repaths += 1
+	if _repaths > 3:
+		_going = false
+		arrived.emit()
+	else:
+		agent.target_position = agent.target_position
 
 func _animate(planar: float) -> void:
 	if _anim == null:
@@ -267,11 +391,12 @@ const RAGDOLL := [
 ]
 
 ## Collapse: the clips stop and the body falls under physics (layer 4, collides with the house only),
-## pushed by `impulse` at the chest.
+## pushed by `impulse` at the chest. Also lets a held body (hold_limp) fall again where it now is.
 func go_limp(impulse := Vector3.ZERO) -> void:
-	if skeleton == null or limp:
+	if skeleton == null or (limp and not _held):
 		return
 	limp = true
+	_held = false
 	busy = true
 	work_anim = ""
 	hold_tool("")
@@ -282,12 +407,35 @@ func go_limp(impulse := Vector3.ZERO) -> void:
 		_anim.pause()
 	if _sim == null:
 		_build_ragdoll()
+	else:                                      # set down after being carried: the bones start from the
+		for pb in _sim.get_children():         # pose he was carried in, not from where he lay before
+			var b := pb as PhysicalBone3D
+			if b:
+				var bone := skeleton.find_bone(b.bone_name)
+				b.global_transform = skeleton.global_transform * skeleton.get_bone_global_pose(bone) * b.body_offset
+				b.linear_velocity = Vector3.ZERO
+				b.angular_velocity = Vector3.ZERO
 	_sim.active = true
 	_sim.physical_bones_start_simulation()
 	if impulse != Vector3.ZERO:
 		var chest := _sim.find_child("PB_Chest", false, false) as PhysicalBone3D
 		if chest:
 			chest.apply_central_impulse(impulse)
+
+## Being carried: the ragdoll rests and the body holds the "limp" pose; whoever carries moves the actor.
+func hold_limp() -> void:
+	if not limp:
+		go_limp()
+	_held = true
+	if _sim:
+		_sim.physical_bones_stop_simulation()
+		_sim.active = false
+	if _anim:
+		_anim.play("limp")
+		_anim.advance(0.0)
+
+func is_held() -> bool:
+	return _held
 
 func show_tag(on: bool) -> void:
 	_label.visible = on and not limp
@@ -303,7 +451,7 @@ func ragdoll_settled() -> bool:
 
 ## Where the body is (the hips), whatever the ragdoll did.
 func body_position() -> Vector3:
-	if _sim != null and limp:
+	if _sim != null and limp and not _held:
 		var hips := _sim.find_child("PB_Hips", false, false) as PhysicalBone3D
 		if hips:
 			return hips.global_position
@@ -337,10 +485,11 @@ func _build_ragdoll() -> void:
 		var cs := CollisionShape3D.new()
 		var cap := CapsuleShape3D.new()
 		cap.radius = spec[2]
-		cap.height = maxf(length + spec[2] * 0.6, spec[2] * 2.0 + 0.01)
+		cap.height = maxf(length, spec[2] * 2.0 + 0.01)   # no longer than the bone: limbs do not start in the floor
 		cs.shape = cap
 		pb.add_child(cs)
 		_sim.add_child(pb)
+		PhysicsServer3D.body_set_enable_continuous_collision_detection(pb.get_rid(), true)
 		match spec[3]:
 			"cone":
 				pb.joint_type = PhysicalBone3D.JOINT_TYPE_CONE

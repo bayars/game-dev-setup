@@ -14,9 +14,13 @@ const STUD_Z0 := 2.4
 const STUDS := 9
 const SHEET_FACE := WALL_X + 0.045 + 0.008 # the east face of the drywall (the side the camera sees)
 const SHEETS := [[2.35, 1.2], [3.55, 1.2], [4.75, 0.9]]   # [z start, width]: two full sheets and a cut one
+const STACK_X := 8.9                       # the sheets lean on the east wall, on their long edge
+const STACK_Z := 4.5                       # .. from here to STACK_Z + 2.4
+const STACK_LEAN := 0.14                   # radians off vertical
 const LAMINATE := Rect2(7.4, 3.3, 1.2, 1.33)  # x, z: seven rows of planks by the window
 const OUTLET := Vector3(7.6, 0.35, 0.08)
 const DISHWASHER_IN := Vector3(5.1, FLOOR, 0.38)
+const DISHWASHER_OUT := 0.85               # pulled out this far while the hoses go on
 const COUCH_AT := Vector3(2.0, FLOOR, 2.7)
 const TABLE_AT := Vector3(2.0, FLOOR, 3.8)     # coffee table in front of the couch
 const MEASURE_Y := House.UP + 1.0
@@ -30,6 +34,7 @@ var _tape: Array[MeshInstance3D] = []
 var _planks: Array[Node3D] = []
 var _legs: Array[Node3D] = []
 var _bits := {}                            # named single pieces: "underlay", "outlet", "dishwasher", ...
+var _frame: CollisionShape3D               # the partition blocks the way once its studs stand
 var _dark: StandardMaterial3D
 var _tape_mat: StandardMaterial3D
 var _mud_mat: StandardMaterial3D
@@ -44,26 +49,24 @@ func setup(h: House, g: Graphics) -> void:
 	_mud_mat = _flat(Color(0.95, 0.94, 0.9), 0.95)
 	_plaster = gfx.pbr("plaster", 2.2, Color(1.08, 1.06, 1.02))
 
-	# the partition: a bottom plate, the studs lying in a pile, and one collider for the whole frame
+	# the partition: a bottom plate on the floor (you can step over it) and the studs lying in a pile; the
+	# collider for the whole frame comes on when the first stud stands
 	var plate := house.prop("Plate", Vector3(WALL_X, FLOOR, STUD_Z0 + 1.6), 90, false, self)
 	plate.scale.x = 3.3
-	var frame := StaticBody3D.new()
-	var shape := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(0.1, 2.6, 3.3)
-	shape.shape = box
-	frame.position = Vector3(WALL_X, 1.3, STUD_Z0 + 1.6)
-	frame.add_child(shape)
-	house.add_child(frame)                  # under the navigation region, so the navmesh goes around it
+	_frame = _collider(Vector3(0.1, 2.6, 3.3), Vector3(WALL_X, 1.3, STUD_Z0 + 1.6))
+	_frame.disabled = true
 	for i in STUDS:
 		var s := house.prop("Stud", _stud_pile(i), 0, false, self)
 		s.rotation = Vector3(-PI / 2, 0, 0)
 		_studs.append(s)
-	for i in 3:
-		var sh := house.prop("DrywallSheet", Vector3(2.9, FLOOR + 0.62 + i * 0.015, 5.1), 0, false, self)
-		sh.rotation = Vector3(-PI / 2, PI / 2, 0)
-		sh.visible = false                  # inside the stack until lifted
-		_sheets.append(sh)
+	# four drywall sheets leaning on the east wall; the front three go up, the last stays as a spare
+	for k in 4:
+		var sh := house.prop("DrywallSheet", Vector3.ZERO, 0, false, self)
+		sh.transform = _stack_pose(k)
+		if k > 0:
+			_sheets.append(sh)
+	_sheets.reverse()                       # _sheets[0] is the front one, lifted first
+	_collider(Vector3(0.3, 1.2, 2.4), Vector3(STACK_X - 0.12, 0.6, STACK_Z + 1.2))
 	var wall_box := house.prop("WallBox", OUTLET, 0, false, self)
 	_bits["wallbox"] = wall_box
 
@@ -73,7 +76,7 @@ func spots(job: String, step: int) -> Array:
 		"studs:0": return [Vector3(WALL_X, 0.12, STUD_Z0 + 1.6)]
 		"studs:1": return range(STUDS).map(func(i): return Vector3(WALL_X, 0.25, STUD_Z0 + i * 0.4))
 		"studs:2": return [Vector3(WALL_X, 2.55, STUD_Z0 + 1.6)]
-		"drywall:0": return [Vector3(2.9, 0.75, 5.7)]
+		"drywall:0": return [_stack_pose(3).origin + Vector3(-0.04, 0.35, 1.2)]
 		"drywall:1": return SHEETS.map(func(s): return Vector3(SHEET_FACE, 1.3, s[0] + s[1] / 2.0))
 		"drywall:2": return range(STUDS).map(func(i): return Vector3(SHEET_FACE + 0.02, 1.3, STUD_Z0 + i * 0.4))
 		"drywall:3": return [Vector3(SHEET_FACE + 0.02, 1.3, 3.55), Vector3(SHEET_FACE + 0.02, 1.3, 4.75)]
@@ -84,12 +87,12 @@ func spots(job: String, step: int) -> Array:
 		"flooring:0": return [Vector3(LAMINATE.get_center().x, FLOOR + 0.05, LAMINATE.get_center().y)]
 		"flooring:1": return range(7).map(func(k): return _plank_pos(k) + Vector3(0, 0.03, 0))
 		"flooring:2": return [Vector3(LAMINATE.get_center().x, FLOOR + 0.05, LAMINATE.get_center().y)]
-		"dishwasher:0": return [DISHWASHER_IN + Vector3(0, 0.95, 0.4)]
-		"dishwasher:1": return [Vector3(4.95, 0.25, 0.3), Vector3(5.28, 0.25, 0.3)]
-		"dishwasher:2": return [DISHWASHER_IN + Vector3(0, 0.9, 0.55)]
+		"dishwasher:0": return [Vector3(5.1, 0.95, 0.75)]
+		"dishwasher:1": return [Vector3(4.92, 0.15, 0.36), Vector3(5.3, 0.15, 0.36)]
+		"dishwasher:2": return [DISHWASHER_IN + Vector3(0, 0.9, DISHWASHER_OUT)]
 		"assemble:0": return [COUCH_AT + Vector3(0, 0.85, 0)]
-		"assemble:1": return _corners(COUCH_AT + Vector3(0, 0.12, 0.02), 0.92, 0.36)
-		"assemble:2": return _corners(TABLE_AT + Vector3(0, 0.1, 0), 0.47, 0.22)
+		"assemble:1": return _corners(COUCH_AT + Vector3(0, 0.74, 0), 0.92, 0.33)
+		"assemble:2": return _corners(TABLE_AT + Vector3(0, 0.06, 0), 0.47, 0.22)
 		"measure:0": return [Vector3(0.25, MEASURE_Y, 3.0), Vector3(8.75, MEASURE_Y, 3.0), Vector3(4.5, MEASURE_Y, 0.2), Vector3(4.5, MEASURE_Y, 5.8)]
 	return []
 
@@ -107,6 +110,9 @@ func apply(job: String, step: int, i: int, t := 1.0) -> void:
 				for k in STUDS:
 					_box(Vector3(0.1, 0.004, 0.012), Vector3(WALL_X, FLOOR + 0.047, STUD_Z0 + k * 0.4), _dark)
 		"studs:1":
+			if _frame.disabled:
+				_frame.disabled = false
+				house.rebake()
 			var s := _studs[i]
 			_tween(s, Vector3(WALL_X, FLOOR + 0.045, STUD_Z0 + i * 0.4), Quaternion.from_euler(Vector3(0, PI / 2, 0)), 0.45)
 			_screw(Vector3(WALL_X - 0.05, FLOOR + 0.07, STUD_Z0 + i * 0.4), Vector3.LEFT)
@@ -121,7 +127,6 @@ func apply(job: String, step: int, i: int, t := 1.0) -> void:
 			var sh := _sheets[i]
 			var z0: float = SHEETS[i][0]
 			var w: float = SHEETS[i][1]
-			sh.visible = true
 			sh.scale = Vector3(w / 1.2, 2.6 / 2.4, 1.0)
 			_tween(sh, Vector3(SHEET_FACE, FLOOR + 0.02, z0 + w / 2.0), Quaternion.from_euler(Vector3(0, PI / 2, 0)), 0.8)
 		"drywall:2":
@@ -166,31 +171,42 @@ func apply(job: String, step: int, i: int, t := 1.0) -> void:
 		"dishwasher:0":
 			if t >= 1.0 and not _bits.has("dishwasher"):
 				_hide_load("dishwasher_in")
-				_bits["dishwasher"] = house.prop("Dishwasher", DISHWASHER_IN + Vector3(0, 0, 0.62), 0, false, self)
+				_bits["dishwasher"] = house.prop("Dishwasher", DISHWASHER_IN + Vector3(0, 0, DISHWASHER_OUT), 0, false, self)
 		"dishwasher:1":
-			var hose := _box(Vector3(0.03, 0.03, 0.35), spots("dishwasher", 1)[i] + Vector3(0, -0.15, 0.25), _dark)
+			var hose := _box(Vector3(0.03, 0.03, 0.5), spots("dishwasher", 1)[i] + Vector3(0, -0.08, 0.3), _dark)
 			hose.name = "Hose%d" % i
 		"dishwasher:2":
 			var d := _bits.get("dishwasher") as Node3D
 			if d:
-				d.position = DISHWASHER_IN + Vector3(0, 0, 0.62 * (1.0 - t))
+				d.position = DISHWASHER_IN + Vector3(0, 0, DISHWASHER_OUT * (1.0 - t))
+			if t >= 1.0:
+				for k in 2:
+					var hose := find_child("Hose%d" % k, false, false)
+					if hose:
+						hose.queue_free()
 		"assemble:0":
 			if t >= 1.0 and not _bits.has("couch"):
 				_hide_load("couch_in")
-				_bits["couch"] = house.prop("CouchLegless", COUCH_AT, 0, false, self)
+				var c := house.prop("CouchLegless", COUCH_AT + Vector3(0, 0.72, 0), 0, false, self)
+				c.rotation.x = PI                    # upside down: the legs go on its base
+				_bits["couch"] = c
 				_bits["tabletop"] = house.prop("TableTop", TABLE_AT, 0, false, self)
 				for k in 8:
 					_legs.append(house.prop("Leg", COUCH_AT + Vector3(1.3 + (k % 4) * 0.12, 0, 1.3 + (k / 4) * 0.5), 0, false, self))
 		"assemble:1":
 			_use_leg()
+			_stub(spots("assemble", 1)[i] + Vector3(0, 0.07, 0), 0.14)
 			if i == 3:
 				(_bits["couch"] as Node3D).queue_free()
+				_clear_stubs()
 				_bits["couch"] = house.prop("Couch", COUCH_AT, 0, true, house)
 				house.rebake()
 		"assemble:2":
 			_use_leg()
+			_stub(spots("assemble", 2)[i] + Vector3(0, 0.18, 0), 0.38)
 			if i == 3:
 				(_bits["tabletop"] as Node3D).queue_free()
+				_clear_stubs()
 				_bits["table"] = house.prop("Table", TABLE_AT, 0, true, house)
 				house.rebake()
 		"measure:0":
@@ -215,14 +231,43 @@ static func anim_for(tool: String, height: float) -> String:
 
 # ---------------------------------------------------------------- helpers
 
+## A sheet leaning on the east wall: `k` 0 is against the wall, higher k further out. The sheet's 2.4 m
+## runs along the wall (z), its 1.2 m width stands up, tipped STACK_LEAN towards the wall.
+func _stack_pose(k: int) -> Transform3D:
+	var up := Vector3(sin(STACK_LEAN), cos(STACK_LEAN), 0)
+	var b := Basis(up, Vector3(0, 0, 1), up.cross(Vector3(0, 0, 1)))
+	var mid := Vector3(STACK_X - 0.6 * sin(STACK_LEAN) - 0.02 - k * 0.02, FLOOR + 0.6 * cos(STACK_LEAN), STACK_Z)
+	return Transform3D(b, mid)
+
+## A solid box under the house node (the navigation mesh is baked from the house's children).
+func _collider(size: Vector3, at: Vector3) -> CollisionShape3D:
+	var body := StaticBody3D.new()
+	var shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = size
+	shape.shape = box
+	body.position = at
+	body.add_child(shape)
+	house.add_child(body)
+	return shape
+
 func _stud_pile(i: int) -> Vector3:
-	return Vector3(7.25 + (i % 3) * 0.11, FLOOR + 0.025 + (i / 3) * 0.047, 2.0)
+	return Vector3(7.25 + (i % 3) * 0.11, FLOOR + 0.025 + (i / 3) * 0.047, 2.75)   # lying north, clear of the kitchen wall
 
 func _plank_pos(k: int) -> Vector3:
 	return Vector3(LAMINATE.get_center().x, FLOOR + 0.006, LAMINATE.position.y + 0.19 * (k + 0.5))
 
 func _corners(c: Vector3, dx: float, dz: float) -> Array:
 	return [c + Vector3(-dx, 0, -dz), c + Vector3(dx, 0, -dz), c + Vector3(dx, 0, dz), c + Vector3(-dx, 0, dz)]
+
+## A bolted-on leg standing up from the upturned couch or table until it is turned over.
+func _stub(at: Vector3, length: float) -> void:
+	var leg := _box(Vector3(0.05, length, 0.05), at, _flat(Color(0.25, 0.18, 0.12), 0.6))
+	leg.add_to_group("leg_stubs")
+
+func _clear_stubs() -> void:
+	for n in get_tree().get_nodes_in_group("leg_stubs"):
+		n.queue_free()
 
 func _use_leg() -> void:
 	if not _legs.is_empty():

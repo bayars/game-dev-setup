@@ -93,6 +93,21 @@ PROFILES = {
                hair={"style": "bun", "colour": "#D9D5CF", "grey": 1.0},
                clothes={"top": "cardigan", "top_colour": "#C9B48E", "top_dark": "#A8936E", "inner": "#E8E2EE",
                         "pants": "#5A5560", "shoes": "slippers", "shoe_colour": "#7A4A4E", "extras": ["glasses"]}),
+    # the police on day 2: a detective in a long grey coat, and a uniformed officer
+    "hale": _p(height=1.72,
+               body={"shoulders": 0.92, "hips": 1.04, "girth": 0.95, "bust": 0.5, "limbs": 0.9},
+               face={"skin": "#D9A37F", "eyes": ("#5E4A36", "#2E2216"), "brows": "#3A2A20", "freckles": 0,
+                     "wrinkles": 0.4, "jaw": 0.9, "brow": 0.9, "nose": 1.0, "lips": "#9A5A55"},
+               hair={"style": "bun", "colour": "#3B2A20", "grey": 0.3},
+               clothes={"top": "jacket", "top_colour": "#5E6066", "top_dark": "#45474C", "pants": "#2A2B30",
+                        "shoes": "boots", "shoe_colour": "#1E1E22"}),
+    "officer": _p(height=1.82,
+                  body={"shoulders": 1.04, "girth": 1.02, "limbs": 1.02},
+                  face={"skin": "#B98563", "eyes": ("#4E3A28", "#2A1E12"), "brows": "#1A120C", "freckles": 0,
+                        "stubble": 0.3, "jaw": 1.15, "nose": 1.05, "lips": "#8E4E48"},
+                  hair={"style": "cropped", "colour": "#16100B"},
+                  clothes={"top": "shirt", "top_colour": "#2E3F5C", "top_dark": "#22304A", "pants": "#1F2738",
+                           "shoes": "boots", "shoe_colour": "#141416", "extras": ["toolbelt"]}),
 }
 
 

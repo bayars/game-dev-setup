@@ -967,7 +967,7 @@ common.export_glb(out)
 def setup_preview():
     common._enable_cuda()
     scene.render.engine = "CYCLES"
-    scene.cycles.device = "GPU"
+    scene.cycles.device = common.device()
     scene.cycles.samples = 40
     scene.cycles.use_denoising = True
     scene.render.resolution_x = scene.render.resolution_y = 256

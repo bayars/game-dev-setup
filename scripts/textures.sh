@@ -11,7 +11,7 @@ mkdir -p "$OUT"
 "$BLENDER" -b --factory-startup --python "$ROOT/art-src/textures/pbr.py" -- "$OUT" "$@"
 for k in albedo normal; do
   rm -f "$OUT/sheet_$k.png"
-  ffmpeg -hide_banner -loglevel error -y -framerate 1 -pattern_type glob -i "$OUT/[a-z]*_$k.png" \
+  ffmpeg -nostdin -hide_banner -loglevel error -y -framerate 1 -pattern_type glob -i "$OUT/[a-z]*_$k.png" \
     -vf scale=256:256,tile=5x2 -frames:v 1 "$OUT/sheet_$k.png"
 done
 echo "TEXTURES_DONE"

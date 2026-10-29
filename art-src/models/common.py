@@ -123,6 +123,15 @@ def sphere(name, radius, loc, material, parent=None, scale=(1, 1, 1), seg=24, ri
     return _place(o, name, material, parent, loc, (0, 0, 0))
 
 
+def torus(name, major, minor, loc, material, parent=None, rot=(0, 0, 0), scale=(1, 1, 1), mseg=32, nseg=10):
+    bpy.ops.mesh.primitive_torus_add(major_radius=major, minor_radius=minor, major_segments=mseg, minor_segments=nseg)
+    o = bpy.context.active_object
+    o.scale = scale
+    _apply_scale(o)
+    _smooth(o, math.radians(60))
+    return _place(o, name, material, parent, loc, rot)
+
+
 def ico(name, radius, loc, material, parent=None, subdiv=2, scale=(1, 1, 1)):
     bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=subdiv, radius=radius)
     o = bpy.context.active_object

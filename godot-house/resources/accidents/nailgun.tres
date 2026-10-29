@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="AccidentCase" format=3]
+
+[ext_resource type="Script" path="res://scripts/accident_case.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "nailgun"
+title = "The nail gun"
+job_id = "skirting"
+step = 1
+after_spots = 2
+what = "nailgun"
+injury = "puncture"
+noise_radius = 15.0
+noise_what = "a sharp bang"
+daniel_at = Vector3(1.4, 2.9, 4.9)
+fall = Vector3(0.6, 0.0, 3.0)
+tokens = [{"id": "nailgun", "label": "The nail gun", "offset": Vector3(0.5, 0.0, -0.3), "seconds": 1.5, "item": "nailgun", "main": true}, {"id": "nails", "label": "Loose nails on the floor", "offset": Vector3(-0.4, 0.0, 0.5), "seconds": 3.0, "item": "", "main": false}]
+before = [["Nico", "(putting the nail gun down) Hand me the next board, Daniel."], ["Daniel", "Can I do one? It's like a toy. How hard can it be."]]
+after = [["Nico", "Daniel?! Put it -- Daniel!"], ["Tomas", "(running up the stairs) That bang, what -- oh God. Nico."], ["Tomas", "He's not moving. He's not breathing."]]

@@ -11,10 +11,10 @@ mkdir -p "$(dirname "$OUT")"
 
 if [[ "$1" == *%* ]]; then INPUT=(-framerate "${FPS:-30}" -i "$IN"); else [[ -f "$IN" ]] || { echo "not found: $IN" >&2; exit 2; }; INPUT=(-i "$IN"); fi
 
-if ffmpeg -hide_banner -y "${INPUT[@]}" -c:v h264_nvenc -preset p5 -pix_fmt yuv420p "$OUT"; then
+if ffmpeg -nostdin -hide_banner -y "${INPUT[@]}" -c:v h264_nvenc -preset p5 -pix_fmt yuv420p "$OUT"; then
   echo "ENCODE_DONE encoder=h264_nvenc $2"
 else
   echo "NOTICE: NVENC failed, falling back to libx264 (CPU)" >&2
-  ffmpeg -hide_banner -y "${INPUT[@]}" -c:v libx264 -crf 18 -pix_fmt yuv420p "$OUT"
+  ffmpeg -nostdin -hide_banner -y "${INPUT[@]}" -c:v libx264 -crf 18 -pix_fmt yuv420p "$OUT"
   echo "ENCODE_DONE encoder=libx264 $2"
 fi

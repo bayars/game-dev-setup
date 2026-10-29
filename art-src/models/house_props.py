@@ -274,6 +274,48 @@ box("Bumper", (2.04, 0.18, 0.2), (0, 2.72, 0.42), DARK, r, bevel=0.06)
 box("RearBumper", (2.04, 0.18, 0.2), (0, -2.32, 0.42), DARK, r, bevel=0.06)
 box("Stripe", (2.02, 3.0, 0.14), (0, -0.3, 1.1), mat("VanStripe", "#3B6EA5", roughness=0.4), r, bevel=0.05)
 
+# ---------------------------------------------------------------- day 2: what the staged scenes use
+ALU = mat("Aluminium", "#B9BEC4", metallic=0.7, roughness=0.35)
+r = prop("Ladder")                    # 2.6 m ladder standing on its feet, rungs facing -Y
+for sx in (-1, 1):
+    box("Rail", (0.05, 0.07, 2.6), (sx * 0.21, 0, 1.3), ALU, r, bevel=0.012)
+    box("Foot", (0.07, 0.09, 0.05), (sx * 0.21, 0, 0.025), TYRE, r, bevel=0.015)
+for i in range(8):
+    cyl("Rung", 0.016, 0.42, (0, 0, 0.3 + i * 0.3), ALU, r, verts=12, rot=(0, math.pi / 2, 0))
+
+WICKER = mat("Wicker", "#C9A46B", roughness=0.85)
+CLOTH = [mat("ClothBlue", "#4A6FA5", roughness=0.95), mat("ClothRed", "#B8574A", roughness=0.95),
+         mat("ClothWhite", "#E8E4DA", roughness=0.95), mat("ClothGreen", "#6C8E5A", roughness=0.95)]
+r = prop("LaundryBasket")             # full basket, standing
+box("Basket", (0.55, 0.38, 0.32), (0, 0, 0.16), WICKER, r, bevel=0.06)
+for i, m in enumerate(CLOTH):
+    box("Clothes", (0.42 - i * 0.05, 0.28, 0.06), (0.02 * i, 0.01 * i, 0.32 + i * 0.03), m, r, bevel=0.025)
+r = prop("LaundrySpill")              # the basket on its side and clothes spread out in front (-Y)
+box("Basket", (0.55, 0.32, 0.38), (0, 0.2, 0.19), WICKER, r, bevel=0.06, rot=(0.0, 0.0, 0.25))
+for i, (x, y, rz) in enumerate(((-0.3, -0.3, 0.4), (0.2, -0.5, -0.6), (-0.05, -0.85, 1.1), (0.35, -1.1, 0.2), (-0.35, -1.3, -0.8))):
+    box("Cloth", (0.34, 0.26, 0.025), (x, y, 0.013), CLOTH[i % 4], r, bevel=0.012, rot=(0, 0, rz))
+
+r = prop("Towel")                     # a towel dropped on the floor
+box("Towel", (0.5, 0.36, 0.03), (0, 0, 0.015), mat("Towel", "#5E8FA8", roughness=1.0), r, bevel=0.014, rot=(0, 0, 0.3))
+box("Fold", (0.3, 0.2, 0.03), (0.12, -0.08, 0.04), mat("Towel", "#5E8FA8", roughness=1.0), r, bevel=0.014, rot=(0, 0, -0.4))
+
+r = prop("Compressor")                # small site compressor: red tank, handle, gauge
+COMP = mat("CompressorRed", "#B53A2E", metallic=0.3, roughness=0.4)
+cyl("Tank", 0.16, 0.5, (0, 0, 0.22), COMP, r, verts=24, rot=(0, math.pi / 2, 0))
+box("Motor", (0.3, 0.2, 0.16), (0, 0, 0.44), DARK, r, bevel=0.04)
+box("Handle", (0.36, 0.03, 0.03), (0, 0, 0.6), STEEL, r, bevel=0.01)
+cyl("Gauge", 0.035, 0.02, (0.12, -0.11, 0.44), PLATE, r, verts=16, rot=(math.pi / 2, 0, 0))
+for sx in (-1, 1):
+    cyl("Wheel", 0.06, 0.04, (sx * 0.22, 0.12, 0.06), TYRE, r, verts=16, rot=(0, math.pi / 2, 0))
+
+r = prop("Offcuts")                   # a few board offcuts lying together
+for i, (x, y, l, rz) in enumerate(((0, 0, 0.6, 0.1), (0.06, 0.12, 0.45, -0.2), (-0.1, -0.1, 0.35, 0.5))):
+    box("Offcut", (l, 0.09, 0.045), (x, y, 0.023 + i * 0.045), PINE, r, bevel=0.008, rot=(0, 0, rz))
+
+r = prop("StorageBox")                # a cardboard box (off the garage shelf)
+box("Box", (0.45, 0.32, 0.3), (0, 0, 0.15), CARD, r, bevel=0.02)
+box("Flap", (0.45, 0.02, 0.16), (0, -0.17, 0.33), CARD_DK, r, bevel=0.01, rot=(0.6, 0, 0))
+
 # ---------------------------------------------------------------- export (props at the origin) and preview
 grid = {o.name: o.location.copy() for o in _props}
 for o in _props:

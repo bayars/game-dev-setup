@@ -7,6 +7,7 @@ extends Node3D
 var label := ""
 var size := Vector3.ONE                # footprint and height, metres (x across, z along the carry)
 var carriers: Array[Actor] = []
+var carry_height := 0.45               # lifted this high between two carriers
 
 func setup(what: String, house: House, prop_name: String, footprint: Vector3, yaw_deg: float) -> void:
 	label = what
@@ -18,3 +19,10 @@ func is_carried() -> bool:
 
 func lead() -> Actor:
 	return carriers[0] if carriers.size() > 0 else null
+
+## Picked up / set down (the body overrides these).
+func lift() -> void:
+	pass
+
+func drop() -> void:
+	pass

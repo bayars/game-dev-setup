@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="StageScenario" format=3]
+
+[ext_resource type="Script" path="res://scripts/stage_scenario.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "garage_nailgun"
+title = "Played with the nail gun at the workbench"
+story = "He took the nail gun down to his father's workbench to build something, and it went off."
+room = "Garage"
+level = 0
+area = Rect2(6.0, 7.9, 3.0, 2.0)
+mark = Vector3(7.5, 0.0, 8.8)
+explains = ["puncture"]
+fits_heard = ["Garage", "Work room", "Hallway"]
+setup = [{"id": "nailgun", "text": "Leave the nail gun on the workbench", "at": Vector3(7.0, 0.0, 8.2), "seconds": 1.5, "needs": "nailgun"}, {"id": "offcuts", "text": "Lay some offcuts out on the bench", "at": Vector3(8.2, 0.0, 8.2), "seconds": 2.0, "needs": ""}]

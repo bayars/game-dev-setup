@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="AccidentCase" format=3]
+
+[ext_resource type="Script" path="res://scripts/accident_case.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "sheet"
+title = "The drywall sheet"
+job_id = "closet_drywall"
+step = 0
+after_spots = 1
+what = "sheet"
+injury = "crush"
+noise_radius = 10.0
+noise_what = "a loud crash"
+tomas_away = true
+daniel_at = Vector3(6.9, 2.9, 5.2)
+fall = Vector3(-4.5, 0.0, 0.0)
+tokens = [{"id": "sheet", "label": "The broken drywall sheet", "offset": Vector3(0.3, 0.0, 0.0), "seconds": 5.0, "item": "", "main": true}, {"id": "dust", "label": "Gypsum dust on the floor", "offset": Vector3(-0.5, 0.0, -0.4), "seconds": 3.0, "item": "", "main": false}]
+before = [["Daniel", "I'll hold this one too. I told you yesterday, I'm stronger than I look."], ["Nico", "Both hands on it, then. Don't let it lean."]]
+after = [["Nico", "Daniel? Can you hear me? Daniel!"], ["Tomas", "(dropping the box of screws in the doorway) What happened? ...Nico. Nico, he's not breathing."]]

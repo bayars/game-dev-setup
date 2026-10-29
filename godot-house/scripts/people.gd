@@ -14,6 +14,8 @@ const CAST := {
 	"Robert": {"id": "robert", "height": 1.84},
 	"Sofia": {"id": "sofia", "height": 1.62},
 	"Rose": {"id": "rose", "height": 1.56},
+	"Hale": {"id": "hale", "height": 1.72},        # the detective (day 2's investigation)
+	"Officer": {"id": "officer", "height": 1.82},
 }
 
 ## Every clip each model has (Godot strips `_loop` from the looping ones).

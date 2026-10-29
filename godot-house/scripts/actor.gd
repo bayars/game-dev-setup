@@ -29,6 +29,7 @@ var lead_gap := 1.6
 var carrying := ""              # "", "solo" (pushing it along, loud) or "pair" (lifted together)
 var talking := false
 var work_anim := ""             # a work clip that overrides walking and idling
+var idle_clip := "idle"         # what this person does standing still (Sofia: "phone")
 var model: Node3D
 var agent: NavigationAgent3D
 var _anim: AnimationPlayer
@@ -39,27 +40,38 @@ var _tool: Node3D
 var _tool_id := ""
 var _tools_src: Node
 var _fresh := 0                # physics frames since go_to; the agent needs a frame to compute a path
+var _post: Variant = null      # take_post: a working spot to step to while busy
+var _post_look := Vector3.ZERO
+var size := 1.0                # model scale (height / built height); strides scale with it
+var skeleton: Skeleton3D
+var limp := false              # a ragdoll (go_limp) or a carried body (hold_limp): no walking, no clips
+var _shape: CollisionShape3D
+var _label: Label3D
+var _sim: PhysicalBoneSimulator3D
 
-func setup(model_scene: PackedScene, who: String, jacket: Color, pants: Color, gfx: Graphics) -> void:
+## `who` is a name in People.CAST: its own model, scaled to its height.
+func setup(who: String, gfx: Graphics) -> void:
 	display_name = who
+	size = People.scale_of(who)
 	collision_layer = 2      # people: collide with the house (layer 1) but not with each other,
 	collision_mask = 1       # so nobody gets stuck in a 1.2 m doorway
-	var shape := CollisionShape3D.new()
+	_shape = CollisionShape3D.new()
 	var capsule := CapsuleShape3D.new()
 	capsule.radius = 0.24
-	capsule.height = 1.75
-	shape.shape = capsule
-	shape.position.y = 0.875
-	add_child(shape)
+	capsule.height = 1.75 * size
+	_shape.shape = capsule
+	_shape.position.y = 0.875 * size
+	add_child(_shape)
 
-	model = model_scene.instantiate()
+	model = People.model(who).instantiate()
+	model.scale = Vector3.ONE * size
 	add_child(model)
 	gfx.style_person(model)
-	_tint(jacket, pants)
 	_anim = model.find_child("AnimationPlayer", true, false)
 	if _anim:
 		_anim.play("idle")
-	var skel := model.find_child("Skeleton3D", true, false) as Skeleton3D
+	skeleton = model.find_child("Skeleton3D", true, false) as Skeleton3D
+	var skel := skeleton
 	if skel:
 		_hand = BoneAttachment3D.new()
 		_hand.bone_name = "Hand_R"
@@ -74,6 +86,7 @@ func setup(model_scene: PackedScene, who: String, jacket: Color, pants: Color, g
 	add_child(agent)
 
 	var label := Label3D.new()             # name tag, readable from the high camera
+	_label = label
 	label.text = who
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.no_depth_test = true
@@ -82,7 +95,7 @@ func setup(model_scene: PackedScene, who: String, jacket: Color, pants: Color, g
 	label.fixed_size = true                # same size on screen when the camera moves in
 	label.pixel_size = 0.00045
 	label.modulate = UiTheme.person_color(who).lightened(0.25)
-	label.position.y = 2.1
+	label.position.y = 2.1 * size
 	add_child(label)
 
 	_ring = MeshInstance3D.new()           # selection ring under the controlled brother
@@ -142,6 +155,12 @@ func go_to(p: Vector3) -> void:
 	_going = true
 	_fresh = 0
 
+## While busy: walk straight to a nearby working spot and face `look` there (pair jobs keep apart).
+func take_post(p: Vector3, look: Vector3) -> void:
+	_post = p
+	_post_look = look
+	_going = false
+
 func stop() -> void:
 	_going = false
 
@@ -162,30 +181,19 @@ func is_moving() -> bool:
 func room() -> String:
 	return House.room_at(global_position)
 
-func _tint(jacket: Color, pants: Color) -> void:
-	for node in model.find_children("*", "MeshInstance3D", true, false):
-		var mi := node as MeshInstance3D
-		for s in mi.mesh.get_surface_count():
-			var src := mi.get_active_material(s) as BaseMaterial3D
-			if src == null:
-				continue
-			var n := src.resource_name
-			var c: Variant = null
-			if n == "Jacket":
-				c = jacket
-			elif n == "JacketDark":
-				c = jacket.darkened(0.3)
-			elif n == "Pants":
-				c = pants
-			if c != null:
-				var m := src.duplicate() as BaseMaterial3D
-				m.albedo_color = c
-				mi.set_surface_override_material(s, m)
-
 func _physics_process(delta: float) -> void:
+	if limp:
+		return
 	var dir := Vector3.ZERO
 	if busy:
-		pass
+		if _post != null:             # step over to the assigned working spot, then face the work
+			var to_post: Vector3 = _post - global_position
+			to_post.y = 0.0
+			if to_post.length() > 0.06:
+				dir = to_post.normalized() * minf(1.0, to_post.length() * 2.5)
+			else:
+				_post = null
+				face(_post_look)
 	elif lead != null:
 		var spot := lead.global_position - lead.forward() * lead_gap
 		var to_spot := spot - global_position
@@ -222,19 +230,126 @@ func _physics_process(delta: float) -> void:
 func _animate(planar: float) -> void:
 	if _anim == null:
 		return
-	var clip := "idle"
+	var clip := idle_clip
 	var scale := 1.0
 	if work_anim != "":
 		clip = work_anim
 	elif carrying != "":
 		clip = "drag" if carrying == "solo" else "carry"
-		scale = planar / (DRAG_NATURAL if carrying == "solo" else CARRY_NATURAL)
+		scale = planar / ((DRAG_NATURAL if carrying == "solo" else CARRY_NATURAL) * size)
 	elif planar > 0.15:
 		var run_clip := running and speed_mul >= 1.0
 		clip = "run" if run_clip else "walk"
-		scale = planar / (RUN_NATURAL if run_clip else WALK_NATURAL)
+		scale = planar / ((RUN_NATURAL if run_clip else WALK_NATURAL) * size)
 	elif talking:
 		clip = "talk"
 	if _anim.current_animation != clip:
 		_anim.play(clip, 0.25)
 	_anim.speed_scale = 0.0 if carrying != "" and planar < 0.15 else clampf(scale, 0.3, 2.0)
+
+# ---------------------------------------------------------------- ragdoll
+
+## Ragdoll bones: [bone, child bone that ends it ("" = use `length`), radius, joint, length]. Hands, feet,
+## fingers and the face stay as animated (they follow their physical parent).
+const RAGDOLL := [
+	["Hips", "Spine", 0.13, "", 0.0],
+	["Spine", "Chest", 0.12, "cone", 0.0],
+	["Chest", "Neck", 0.14, "cone", 0.0],
+	["Head", "", 0.1, "cone", 0.2],
+	["UpperArm_L", "Forearm_L", 0.045, "cone", 0.0],
+	["Forearm_L", "Hand_L", 0.04, "hinge", 0.0],
+	["UpperArm_R", "Forearm_R", 0.045, "cone", 0.0],
+	["Forearm_R", "Hand_R", 0.04, "hinge", 0.0],
+	["UpperLeg_L", "LowerLeg_L", 0.07, "cone", 0.0],
+	["LowerLeg_L", "Foot_L", 0.055, "hinge", 0.0],
+	["UpperLeg_R", "LowerLeg_R", 0.07, "cone", 0.0],
+	["LowerLeg_R", "Foot_R", 0.055, "hinge", 0.0],
+]
+
+## Collapse: the clips stop and the body falls under physics (layer 4, collides with the house only),
+## pushed by `impulse` at the chest.
+func go_limp(impulse := Vector3.ZERO) -> void:
+	if skeleton == null or limp:
+		return
+	limp = true
+	busy = true
+	work_anim = ""
+	hold_tool("")
+	velocity = Vector3.ZERO
+	_shape.disabled = true
+	_label.visible = false
+	if _anim:
+		_anim.pause()
+	if _sim == null:
+		_build_ragdoll()
+	_sim.active = true
+	_sim.physical_bones_start_simulation()
+	if impulse != Vector3.ZERO:
+		var chest := _sim.find_child("PB_Chest", false, false) as PhysicalBone3D
+		if chest:
+			chest.apply_central_impulse(impulse)
+
+func show_tag(on: bool) -> void:
+	_label.visible = on and not limp
+
+## True once every ragdoll bone has come to rest.
+func ragdoll_settled() -> bool:
+	if _sim == null:
+		return false
+	for pb in _sim.get_children():
+		if pb is PhysicalBone3D and (pb as PhysicalBone3D).linear_velocity.length() > 0.08:
+			return false
+	return true
+
+## Where the body is (the hips), whatever the ragdoll did.
+func body_position() -> Vector3:
+	if _sim != null and limp:
+		var hips := _sim.find_child("PB_Hips", false, false) as PhysicalBone3D
+		if hips:
+			return hips.global_position
+	if skeleton == null:
+		return global_position
+	return (skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone("Hips"))).origin
+
+func _build_ragdoll() -> void:
+	_sim = PhysicalBoneSimulator3D.new()
+	skeleton.add_child(_sim)
+	for spec in RAGDOLL:
+		var bone := skeleton.find_bone(spec[0])
+		if bone < 0:
+			continue
+		var head := skeleton.get_bone_global_rest(bone).origin
+		var length: float = spec[4]
+		if spec[1] != "":
+			length = head.distance_to(skeleton.get_bone_global_rest(skeleton.find_bone(spec[1])).origin)
+		var pb := PhysicalBone3D.new()
+		pb.name = "PB_" + spec[0]
+		pb.bone_name = spec[0]
+		pb.collision_layer = 8
+		pb.collision_mask = 1
+		pb.mass = 2.0 if spec[0] in ["Hips", "Spine", "Chest"] else 1.0
+		pb.friction = 0.9
+		pb.linear_damp = 0.4
+		pb.angular_damp = 3.0
+		# the body is centred half way down the bone (bones run along their local +Y)
+		pb.body_offset = Transform3D(Basis(), Vector3(0, length / 2.0, 0))
+		pb.joint_offset = Transform3D(Basis(), Vector3(0, -length / 2.0, 0))
+		var cs := CollisionShape3D.new()
+		var cap := CapsuleShape3D.new()
+		cap.radius = spec[2]
+		cap.height = maxf(length + spec[2] * 0.6, spec[2] * 2.0 + 0.01)
+		cs.shape = cap
+		pb.add_child(cs)
+		_sim.add_child(pb)
+		match spec[3]:
+			"cone":
+				pb.joint_type = PhysicalBone3D.JOINT_TYPE_CONE
+				pb.set("joint_constraints/swing_span", 50.0)
+				pb.set("joint_constraints/twist_span", 25.0)
+			"hinge":
+				pb.joint_type = PhysicalBone3D.JOINT_TYPE_HINGE
+				pb.set("joint_constraints/angular_limit_enabled", true)
+				pb.set("joint_constraints/angular_limit_upper", 0.0)
+				pb.set("joint_constraints/angular_limit_lower", -130.0)
+			_:
+				pb.joint_type = PhysicalBone3D.JOINT_TYPE_NONE

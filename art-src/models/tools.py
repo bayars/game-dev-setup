@@ -85,7 +85,9 @@ box("Mud", (0.12, 0.006, 0.025), (0, -0.004, 0.13), MUD, r, bevel=0.003)
 
 r = item("mud")
 cone("Bucket", 0.12, 0.14, 0.24, (0, 0, 0.12), WHITE, r, verts=28)
-cyl("Compound", 0.135, 0.01, (0, 0, 0.235), MUD, r, verts=28)
+cone("Band", 0.1335, 0.1375, 0.07, (0, 0, 0.17), BLUE, r, verts=28)
+# the compound sits proud of the rim in a darker grey so it reads against the white bucket
+cyl("Compound", 0.128, 0.012, (0, 0, 0.238), mat("Compound", "#A9A396", roughness=0.95), r, verts=28)
 torus("Bail", 0.13, 0.005, (0, 0, 0.24), STEEL, r, rot=(math.pi / 2, 0, 0), mseg=24, nseg=6)
 
 r = item("mallet")

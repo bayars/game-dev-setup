@@ -135,7 +135,7 @@ New cases are added without code changes.
 ## Milestones (each one a branch and a PR you merge)
 1. **Greybox:** the house blockout, iso 3D camera with cutaway, click and WASD movement, Tab between the brothers, one resident on a schedule.
 2. **Day 1 tutorial:** the install view (tools, hotspots, visible results), job list, orders to the brother, solo vs pair carrying (couch) with noise rings, end-of-day pay.
-3. **Characters:** parametric people (7), the new animations, ragdoll.
+3. **Characters:** parametric people (7), the new animations, ragdoll. Done: `people.py` profiles, `person_<id>.glb`, clips search/crouch/phone/sit/react_fall/limp, `Actor.go_limp` ragdoll, `tests/people_test.gd`.
 4. **Day 2 and accidents:** normal-day flow, three accident cases with the zoom cinematic, the Truth branch with its card.
 5. **Cover-up loop:** body moving (solo or pair), evidence tokens, the work facade, the four residents' search AI and Seen logs, discovery trigger.
 6. **Staging and investigation:** scenarios, the police cinematic, checks with pass/fail reasons, all endings.

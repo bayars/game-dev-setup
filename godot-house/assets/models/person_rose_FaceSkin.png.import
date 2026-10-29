@@ -2,19 +2,19 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dheodlcimfrfj"
-path="res://.godot/imported/worker_FaceSkin.png-f9da4c7cb9c652e2be2fb43c12a68e97.ctex"
+uid="uid://clhwwasfaq40o"
+path="res://.godot/imported/person_rose_FaceSkin.png-8ae12e35f08645099cdc9fdad0e7926c.ctex"
 metadata={
 "vram_texture": false
 }
 generator_parameters={
-"md5": "fdc6b1b4cbf1e7706e52fef437e0d824"
+"md5": "49ed7d2857f835e9d3189c5ee0ef4ce0"
 }
 
 [deps]
 
-source_file="res://assets/models/worker_FaceSkin.png"
-dest_files=["res://.godot/imported/worker_FaceSkin.png-f9da4c7cb9c652e2be2fb43c12a68e97.ctex"]
+source_file="res://assets/models/person_rose_FaceSkin.png"
+dest_files=["res://.godot/imported/person_rose_FaceSkin.png-8ae12e35f08645099cdc9fdad0e7926c.ctex"]
 
 [params]
 

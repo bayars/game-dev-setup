@@ -16,6 +16,8 @@ signal changed                             # step, progress, selection or messag
 
 const PICK_PX := 34.0                      # how close the mouse must be to a hotspot, in pixels
 const ACTION_SECONDS := 0.75               # one hotspot: the clip plays, then the piece appears
+const VIEW := Vector2(45, -45)             # default view angles (yaw, pitch in degrees) for a step
+const CLOSEST := 6.5                       # the camera never comes nearer than this to the work
 
 ## Everything in the tool bag, in tray order: id -> display name.
 const EQUIPMENT := {
@@ -37,6 +39,8 @@ var worker: Actor
 var helper: Actor                          # holds the sheet on two-person jobs
 var worksite: Worksite
 var cam: IsoCamera
+var safe_rect: Callable                    # -> Rect2: the screen the HUD leaves free for the hotspots
+var people: Array = []                     # everyone in the house: faded out while in front of the work
 
 var _spots: Array = []
 var _done: Array[bool] = []
@@ -71,13 +75,6 @@ func start(j: Job, w: Actor, h: Actor, ws: Worksite, c: IsoCamera) -> void:
 	step = 0
 	_active = true
 	_begin_step()
-	var all: Array = []
-	for s in j.steps.size():
-		all += ws.spots(j.id, s)
-	var centre := Vector3.ZERO
-	for p in all:
-		centre += p
-	cam.focus_on(centre / maxf(1.0, all.size()), 7.5)
 
 func current() -> Dictionary:
 	return job.steps[step] if _active else {}
@@ -153,6 +150,31 @@ func _begin_step() -> void:
 	_build_markers()
 	message = ""
 	changed.emit()
+	var s := current()
+	if s.has("at"):                        # this step is done somewhere else (the sheet stack)
+		var at: Vector3 = s.at
+		worker.take_post(Vector3(at.x, at.y + Worksite.FLOOR, at.z), _spots[0])
+	elif step > 0 and job.steps[step - 1].has("at"):
+		worker.take_post(job.station + Vector3(0, Worksite.FLOOR, 0), _centre(_spots))
+	_frame_step()
+
+## Turns the camera to this step's view and backs off just enough to show every hotspot between the
+## step card and the tool bag.
+func _frame_step() -> void:
+	var at_step := step
+	await get_tree().process_frame             # the HUD lays out the step card first
+	if not _active or step != at_step:
+		return
+	var v: Vector2 = current().get("view", VIEW)
+	var safe: Rect2 = safe_rect.call() if safe_rect.is_valid() else get_viewport().get_visible_rect().grow(-120)
+	var fit := cam.fit(_spots, deg_to_rad(v.x), deg_to_rad(v.y), safe, CLOSEST)
+	cam.focus_on(fit[0], fit[1], deg_to_rad(v.x), deg_to_rad(v.y))
+
+static func _centre(points: Array) -> Vector3:
+	var c := Vector3.ZERO
+	for p in points:
+		c += p
+	return c / maxf(1.0, points.size())
 
 func _say(text: String, bad := false) -> void:
 	message = text
@@ -198,6 +220,26 @@ func _process(delta: float) -> void:
 			m.material_override = _mat_hover if k == hover else _mat_idle
 			var pulse := 1.0 + 0.15 * sin(Time.get_ticks_msec() / 180.0 + k)
 			m.scale = Vector3.ONE * pulse * (1.35 if k == hover else 1.0)
+	for a in people:
+		(a as Actor).set_faded(blocks_view(a))
+
+## True if `a` stands between the camera and a hotspot still to do (the play-test checks the same).
+func blocks_view(a: Actor) -> bool:
+	if not a.visible:
+		return false
+	var c := cam.camera
+	var top := a.global_position + Vector3(0, 1.85 * a.size, 0)
+	if c.is_position_behind(a.global_position) or c.is_position_behind(top):
+		return false
+	var feet := c.unproject_position(a.global_position)
+	var head := c.unproject_position(top)
+	var half := c.unproject_position(a.global_position + c.global_basis.x * 0.32).distance_to(feet)
+	var body := Rect2(feet, Vector2.ZERO).expand(head).grow_individual(half, half * 0.5, half, half * 0.5)
+	var depth := c.global_position.distance_to(a.global_position + Vector3(0, 0.9 * a.size, 0))
+	for k in _spots.size():
+		if not _done[k] and body.has_point(c.unproject_position(_spots[k])) and depth < c.global_position.distance_to(_spots[k]) - 0.15:
+			return true
+	return false
 
 func _right_tool_quiet(s: Dictionary) -> bool:
 	if selected == s.tool:
@@ -220,6 +262,8 @@ func _after_spot() -> void:
 func _end(ok: bool) -> void:
 	_active = false
 	_clear_markers()
+	for a in people:
+		(a as Actor).set_faded(false)
 	worker.work("", "")
 	worker.hold_tool("")
 	if helper:
@@ -302,7 +346,7 @@ func _build_markers() -> void:
 	for k in _spots.size():
 		var mi := MeshInstance3D.new()
 		var sphere := SphereMesh.new()
-		var r := 0.09 if s.kind == "hold" else 0.055
+		var r := 0.075 if s.kind == "hold" else 0.055
 		sphere.radius = r
 		sphere.height = r * 2.0
 		sphere.radial_segments = 16
